@@ -3,7 +3,6 @@ package sql
 import (
 	"database/sql"
 	"errors"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -16,18 +15,18 @@ import (
 var (
 	ErrCannotConnectDb = errors.New("unable to connect to a db")
 
-	ErrNoTransactionInContext = fmt.Errorf("no started transaction in context")
-	ErrCannotStartTx          = fmt.Errorf("unable to start a transaction")
+	ErrNoTransactionInContext = errors.New("no started transaction in context")
+	ErrCannotStartTx          = errors.New("unable to start a transaction")
 
-	ErrCannotCreateSavepoint   = fmt.Errorf("unable to create a savepoint")
-	ErrCannotReleaseSavepoint  = fmt.Errorf("unable to release a savepoint")
-	ErrCannotRollbackSavepoint = fmt.Errorf("unable to rollback a savepoint")
+	ErrCannotCreateSavepoint   = errors.New("unable to create a savepoint")
+	ErrCannotReleaseSavepoint  = errors.New("unable to release a savepoint")
+	ErrCannotRollbackSavepoint = errors.New("unable to rollback a savepoint")
 
-	ErrCannotCommitTransaction   = fmt.Errorf("unable to commit a transaction")
-	ErrCannotRollbackTransaction = fmt.Errorf("unable to rollback a transaction")
+	ErrCannotCommitTransaction   = errors.New("unable to commit a transaction")
+	ErrCannotRollbackTransaction = errors.New("unable to rollback a transaction")
 
-	ErrExprBuilderNotImplemented = fmt.Errorf("expression builder is not defined")
-	ErrUnsupportedQueryMode      = fmt.Errorf("unsupported query mode")
+	ErrExprBuilderNotImplemented = errors.New("expression builder is not defined")
+	ErrUnsupportedQueryMode      = errors.New("unsupported query mode")
 
 	ErrArgumentsMismatch = errors.New("number of placeholders does not match number of arguments")
 )
