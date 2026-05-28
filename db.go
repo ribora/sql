@@ -1,11 +1,14 @@
-// Cardinality: db.operation labels are bounded ({begin,query,queryRow,exec,
-// commit,rollback}); db.statement is a span attribute only — never a metric label.
+// Cardinality: db.operation.name labels are bounded ({begin,query,queryRow,
+// exec,commit,rollback}); db.query.text is a span attribute only — never a
+// metric label.
 
 package sql
 
 import (
 	"context"
 	dbSql "database/sql"
+	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -65,16 +68,16 @@ func (t *tracedDb) Begin(ctx context.Context) (tx Tx, err error) {
 	txCtx, span := tracer.Start(ctx, "sql.transaction",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system", t.system),
-			hilton.StringAttr("db.operation", "begin"),
+			hilton.StringAttr("db.system.name", t.system),
+			hilton.StringAttr("db.operation.name", "begin"),
 		),
 	)
 	start := time.Now()
 
 	defer func() {
 		if tx == nil {
-			status := recordSpanErr(span, err)
-			recordDb(ctx, duration, t.system, "begin", time.Since(start).Seconds(), status)
+			recordSpanErr(span, err)
+			recordDb(ctx, duration, t.system, "begin", time.Since(start).Seconds(), err)
 			span.End()
 		}
 	}()
@@ -84,7 +87,7 @@ func (t *tracedDb) Begin(ctx context.Context) (tx Tx, err error) {
 		return nil, err
 	}
 
-	recordDb(txCtx, duration, t.system, "begin", time.Since(start).Seconds(), "ok")
+	recordDb(txCtx, duration, t.system, "begin", time.Since(start).Seconds(), nil)
 
 	closer := &spanCloser{span: span}
 	ttx := &tracedTx{
@@ -143,9 +146,9 @@ func (t *tracedTx) QueryRow(ctx context.Context, query string, args ...any) Row 
 	_, span := t.tracer.Start(t.txCtx, "sql.queryRow",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system", t.system),
-			hilton.StringAttr("db.operation", "queryRow"),
-			hilton.StringAttr("db.statement", query),
+			hilton.StringAttr("db.system.name", t.system),
+			hilton.StringAttr("db.operation.name", "queryRow"),
+			hilton.StringAttr("db.query.text", query),
 		),
 	)
 
@@ -180,15 +183,15 @@ func (t *tracedTx) Commit(ctx context.Context) (err error) {
 	_, span := t.tracer.Start(t.txCtx, "sql.commit",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system", t.system),
-			hilton.StringAttr("db.operation", "commit"),
+			hilton.StringAttr("db.system.name", t.system),
+			hilton.StringAttr("db.operation.name", "commit"),
 		),
 	)
 	callCtx := hilton.ContextWithSpan(ctx, span)
 	defer func() {
 		took := time.Since(start).Seconds()
-		status := recordSpanErr(span, err)
-		recordDb(callCtx, t.duration, t.system, "commit", took, status)
+		recordSpanErr(span, err)
+		recordDb(callCtx, t.duration, t.system, "commit", took, err)
 		span.End()
 		t.closer.end(err)
 	}()
@@ -200,15 +203,15 @@ func (t *tracedTx) Rollback(ctx context.Context) (err error) {
 	_, span := t.tracer.Start(t.txCtx, "sql.rollback",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system", t.system),
-			hilton.StringAttr("db.operation", "rollback"),
+			hilton.StringAttr("db.system.name", t.system),
+			hilton.StringAttr("db.operation.name", "rollback"),
 		),
 	)
 	callCtx := hilton.ContextWithSpan(ctx, span)
 	defer func() {
 		took := time.Since(start).Seconds()
-		status := recordSpanErr(span, err)
-		recordDb(callCtx, t.duration, t.system, "rollback", took, status)
+		recordSpanErr(span, err)
+		recordDb(callCtx, t.duration, t.system, "rollback", took, err)
 		span.End()
 		t.closer.end(err)
 	}()
@@ -219,17 +222,17 @@ func doOp[T any](t *tracedTx, ctx context.Context, op, query string, fn func(con
 	_, span := t.tracer.Start(t.txCtx, "sql."+op,
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system", t.system),
-			hilton.StringAttr("db.operation", op),
-			hilton.StringAttr("db.statement", query),
+			hilton.StringAttr("db.system.name", t.system),
+			hilton.StringAttr("db.operation.name", op),
+			hilton.StringAttr("db.query.text", query),
 		),
 	)
 	callCtx := hilton.ContextWithSpan(ctx, span)
 	start := time.Now()
 	defer func() {
 		took := time.Since(start).Seconds()
-		status := recordSpanErr(span, err)
-		recordDb(callCtx, t.duration, t.system, op, took, status)
+		recordSpanErr(span, err)
+		recordDb(callCtx, t.duration, t.system, op, took, err)
 		span.End()
 	}()
 	return fn(callCtx)
@@ -246,8 +249,8 @@ type rowFinalizer struct {
 
 func (f *rowFinalizer) finish(err error) {
 	f.once.Do(func() {
-		status := recordSpanErr(f.closer.span, err)
-		recordDb(f.ctx, f.duration, f.system, "queryRow", time.Since(f.start).Seconds(), status)
+		recordSpanErr(f.closer.span, err)
+		recordDb(f.ctx, f.duration, f.system, "queryRow", time.Since(f.start).Seconds(), err)
 		f.closer.end(err)
 	})
 }
@@ -262,20 +265,47 @@ func (r *tracedRow) Scan(dest ...any) (err error) {
 	return r.row.Scan(dest...)
 }
 
-func recordSpanErr(span hilton.Span, err error) string {
+func recordSpanErr(span hilton.Span, err error) {
 	if err == nil {
-		return "ok"
+		return
 	}
 	span.RecordError(err)
 	span.SetStatus(hilton.StatusError, err.Error())
-	return "error"
 }
 
-func recordDb(ctx context.Context, duration hilton.Histogram, system, op string, took float64, status string) {
+func recordDb(ctx context.Context, duration hilton.Histogram, system, op string, took float64, err error) {
 	attrs := []hilton.Attribute{
-		hilton.StringAttr("db.system", system),
-		hilton.StringAttr("db.operation", op),
-		hilton.StringAttr("status", status),
+		hilton.StringAttr("db.system.name", system),
+		hilton.StringAttr("db.operation.name", op),
+	}
+	if t := errorType(err); t != "" {
+		attrs = append(attrs, hilton.StringAttr("error.type", t))
 	}
 	duration.Record(ctx, took, attrs...)
+}
+
+func errorType(err error) string {
+	if err == nil {
+		return ""
+	}
+	classified := NewError(err)
+	switch {
+	case errors.Is(classified, ErrConflict):
+		return "conflict"
+	case errors.Is(classified, ErrDeadlock):
+		return "deadlock"
+	case errors.Is(classified, ErrNoRows):
+		return "no_rows"
+	case errors.Is(classified, ErrBadRequest):
+		return "bad_request"
+	case errors.Is(classified, ErrInternal):
+		return "internal"
+	case errors.Is(err, ErrCannotConnectDb):
+		return "connect"
+	case errors.Is(err, ErrCannotStartTx),
+		errors.Is(err, ErrCannotCommitTransaction),
+		errors.Is(err, ErrCannotRollbackTransaction):
+		return "tx"
+	}
+	return fmt.Sprintf("%T", err)
 }
