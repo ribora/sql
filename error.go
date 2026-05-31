@@ -57,7 +57,8 @@ func NewError(err error) error {
 		return &e{err: err, code: ErrNoRows}
 	}
 
-	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
 		result := &e{
 			err:        err,
 			code:       ErrInternal,
@@ -81,7 +82,8 @@ func NewError(err error) error {
 		return result
 	}
 
-	if mysqlErr, ok := errors.AsType[*mysql.MySQLError](err); ok {
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
 		result := &e{
 			err:  err,
 			code: ErrInternal,
@@ -104,7 +106,8 @@ func NewError(err error) error {
 		return result
 	}
 
-	if sqliteErr, ok := errors.AsType[*sqlite.Error](err); ok {
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
 		result := &e{
 			err:  err,
 			code: ErrInternal,
