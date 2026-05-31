@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"gitlab.com/gorib/sql/types"
 )
 
 type InsertQuery interface {
@@ -31,7 +29,6 @@ type insertQuery struct {
 	conflictKey string
 	conflicts   []string
 	returning   []string
-	fail        error
 }
 
 func (q *insertQuery) Into(table fromTable) InsertQuery {
@@ -54,14 +51,10 @@ func (q *insertQuery) Values(values ...any) InsertQuery {
 }
 
 func (q *insertQuery) Conflict(conflict string, excluded ...string) InsertQuery {
-	keys := strings.Split(conflict, ",")
-	for idx, key := range keys {
-		keys[idx] = q.filter(key)
-	}
-	q.conflictKey = strings.Join(keys, ",")
+	q.conflictKey = conflict
 	q.conflicts = q.conflicts[:0]
 	for _, exclude := range excluded {
-		q.conflicts = append(q.conflicts, q.filter(exclude))
+		q.conflicts = append(q.conflicts, exclude)
 	}
 	return q
 }
@@ -69,33 +62,32 @@ func (q *insertQuery) Conflict(conflict string, excluded ...string) InsertQuery 
 func (q *insertQuery) Returning(fields ...string) InsertQuery {
 	q.returning = q.returning[:0]
 	for _, field := range fields {
-		q.returning = append(q.returning, q.filter(field))
+		q.returning = append(q.returning, field)
 	}
 	return q
 }
 
-func (q *insertQuery) filter(field any) string {
-	v, err := filter(field)
+func (q *insertQuery) Build(d Driver, opts ...BuildOption) (string, []any, error) {
+	cfg, err := newBuilderCfg(opts)
 	if err != nil {
-		q.fail = err
-		return ""
+		return "", nil, err
 	}
-	return v
-}
-
-func (q *insertQuery) Build(d Driver) (string, []any, error) {
 	var params []any
-	s, err := q.build(d, &params)
+	s, err := q.build(d, cfg, &params)
 	if err != nil {
 		return "", nil, err
 	}
 	return s, params, nil
 }
 
-func (q *insertQuery) build(d Driver, p *[]any) (string, error) {
-	if q.fail != nil {
-		return "", q.fail
+func (q *insertQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error) {
+	filtered := func(field any) (string, error) {
+		if b, ok := field.(builder); ok {
+			return b.build(d, cfg, p)
+		}
+		return filter(field)
 	}
+
 	var sb strings.Builder
 	sb.WriteString("insert into ")
 	if q.table == nil {
@@ -105,14 +97,23 @@ func (q *insertQuery) build(d Driver, p *[]any) (string, error) {
 	if q.table.alias != "" {
 		sb.WriteString(" " + q.table.alias)
 	}
-	if len(q.fields) == 0 {
-		if len(q.returning) > 0 {
-			q.fields = q.returning
+	returning := make([]string, 0, len(q.returning))
+	for _, field := range q.returning {
+		f, err := filtered(field)
+		if err != nil {
+			return "", err
+		}
+		returning = append(returning, f)
+	}
+	fields := append([]string{}, q.fields...)
+	if len(fields) == 0 {
+		if len(returning) > 0 {
+			fields = returning
 		}
 	}
-	if len(q.fields) > 0 {
+	if len(fields) > 0 {
 		sb.WriteString(" (")
-		sb.WriteString(strings.Join(q.fields, ","))
+		sb.WriteString(strings.Join(fields, ","))
 		sb.WriteString(")")
 	}
 	if len(q.from) > 0 && len(q.values) > 0 {
@@ -126,7 +127,7 @@ func (q *insertQuery) build(d Driver, p *[]any) (string, error) {
 		sb.WriteString(f.join)
 		sb.WriteString(" ")
 		if qq, ok := f.query.(*selectQuery); ok {
-			s, err := qq.build(d, p)
+			s, err := qq.build(d, cfg, p)
 			if err != nil {
 				return "", err
 			}
@@ -149,8 +150,12 @@ func (q *insertQuery) build(d Driver, p *[]any) (string, error) {
 	for _, values := range q.values {
 		var v []string
 		for _, value := range values {
-			if vv, ok := value.(types.SqlExpr); ok {
-				v = append(v, vv.String())
+			if b, ok := value.(builder); ok {
+				sub, err := b.build(d, cfg, p)
+				if err != nil {
+					return "", err
+				}
+				v = append(v, sub)
 			} else {
 				*p = append(*p, value)
 				v = append(v, d.Placeholder(len(*p)))
@@ -166,12 +171,28 @@ func (q *insertQuery) build(d Driver, p *[]any) (string, error) {
 
 	if q.conflictKey != "" {
 		sb.WriteString(" ")
-		sb.WriteString(d.Conflict(q.conflictKey, q.conflicts))
+		keys := strings.Split(q.conflictKey, ",")
+		for idx, key := range keys {
+			f, err := filtered(key)
+			if err != nil {
+				return "", err
+			}
+			keys[idx] = f
+		}
+		conflicts := make([]string, 0, len(q.conflicts))
+		for _, key := range q.conflicts {
+			f, err := filtered(key)
+			if err != nil {
+				return "", err
+			}
+			conflicts = append(conflicts, f)
+		}
+		sb.WriteString(d.Conflict(strings.Join(keys, ","), q.conflicts))
 	}
 
-	if len(q.returning) > 0 {
+	if len(returning) > 0 {
 		sb.WriteString(" returning ")
-		sb.WriteString(strings.Join(q.returning, ","))
+		sb.WriteString(strings.Join(returning, ","))
 	}
 
 	return sb.String(), nil

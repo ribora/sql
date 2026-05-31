@@ -20,8 +20,8 @@ type countQuery struct {
 	q SelectQuery
 }
 
-func (c *countQuery) Build(driver Driver) (string, []any, error) {
-	return c.q.Build(driver)
+func (c *countQuery) Build(driver Driver, opts ...BuildOption) (string, []any, error) {
+	return c.q.Build(driver, opts...)
 }
 
 func (c *countQuery) From(main fromMain, opts ...fromOptions) CountQuery {

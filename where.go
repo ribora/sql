@@ -5,9 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"gitlab.com/gorib/sql/types"
-
 	"gitlab.com/gorib/criteria"
+	"gitlab.com/gorib/sql/driver"
 )
 
 var (
@@ -15,13 +14,18 @@ var (
 	lowerReg  = regexp.MustCompile(`([A-Z])`)
 )
 
-func newExpressionBuilder(e criteria.Expression, builder Driver) *exprBuilder {
-	return &exprBuilder{driver: builder, e: e}
+type Valueable interface {
+	values() []any
+}
+
+func newExpressionBuilder(e criteria.Expression, builder Driver, cfg *builderCfg) *exprBuilder {
+	return &exprBuilder{driver: builder, e: e, cfg: cfg}
 }
 
 type exprBuilder struct {
 	e      criteria.Expression
 	driver Driver
+	cfg    *builderCfg
 }
 
 func (e *exprBuilder) build(params *[]any) (string, error) {
@@ -47,8 +51,11 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 	var query []string
 	var q string
 	for _, part := range parts {
+		if v, ok := part.(Valueable); ok {
+			part = v.values()
+		}
 		if ex, ok := part.(criteria.Expression); ok {
-			q, err = newExpressionBuilder(ex, e.driver).build(params)
+			q, err = newExpressionBuilder(ex, e.driver, e.cfg).build(params)
 			if err != nil {
 				return "", err
 			}
@@ -61,20 +68,28 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 			operation := v[1].(string)
 			value := v[2]
 
-			if f, ok := field.(types.SqlExpr); ok {
-				field = f.String()
-			} else if f, ok := field.(string); ok {
-				f = filterReg.ReplaceAllString(f, "")
-				field = lowerReg.ReplaceAllStringFunc(f, func(s string) string {
-					return "_" + strings.ToLower(s)
-				})
+			if f, ok := field.(string); ok {
+				if m, ok := e.cfg.mappings[f]; ok {
+					field = m
+				} else {
+					// protect against injections
+					if filterReg.MatchString(f) {
+						return "", fmt.Errorf("invalid characters in field name: %q", f)
+					}
+					field = lowerReg.ReplaceAllStringFunc(f, func(s string) string {
+						return "_" + strings.ToLower(s)
+					})
+				}
 			} else {
 				return "", fmt.Errorf("unsupported type for field '%s'", field)
 			}
 
 			if s, ok := value.(builder); ok {
-				q, err = s.build(e.driver, params)
-				q = field.(string) + " " + operation + " (" + q + ")"
+				sub, err := s.build(e.driver, e.cfg, params)
+				if err != nil {
+					return "", err
+				}
+				q, params, err = e.driver.Field(field.(string), operation, driver.Raw(sub), params)
 			} else {
 				q, params, err = e.driver.Field(field.(string), operation, value, params)
 			}

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"gitlab.com/gorib/criteria"
-	"gitlab.com/gorib/sql/types"
 )
 
 type UpdateQuery interface {
@@ -65,16 +64,20 @@ func (q *updateQuery) filter(field any) string {
 	return v
 }
 
-func (q *updateQuery) Build(d Driver) (string, []any, error) {
+func (q *updateQuery) Build(d Driver, opts ...BuildOption) (string, []any, error) {
+	cfg, err := newBuilderCfg(opts)
+	if err != nil {
+		return "", nil, err
+	}
 	var params []any
-	s, err := q.build(d, &params)
+	s, err := q.build(d, cfg, &params)
 	if err != nil {
 		return "", nil, err
 	}
 	return s, params, nil
 }
 
-func (q *updateQuery) build(d Driver, p *[]any) (string, error) {
+func (q *updateQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error) {
 	if q.fail != nil {
 		return "", q.fail
 	}
@@ -90,7 +93,7 @@ func (q *updateQuery) build(d Driver, p *[]any) (string, error) {
 	}
 
 	if d.UpdateAsJoin() {
-		s, _, err := q.fromJoin(d, p)
+		s, _, err := q.fromJoin(d, cfg, p)
 		if err != nil {
 			return "", err
 		}
@@ -102,8 +105,12 @@ func (q *updateQuery) build(d Driver, p *[]any) (string, error) {
 
 	var parts []string
 	for field, value := range q.values {
-		if v, ok := value.(types.SqlExpr); ok {
-			parts = append(parts, field+"="+v.String())
+		if b, ok := value.(builder); ok {
+			sub, err := b.build(d, cfg, p)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, field+"="+sub)
 		} else {
 			*p = append(*p, value)
 			parts = append(parts, field+"="+d.Placeholder(len(*p)))
@@ -118,7 +125,7 @@ func (q *updateQuery) build(d Driver, p *[]any) (string, error) {
 		}
 		var s string
 		var err error
-		s, on, err = q.fromJoin(d, p)
+		s, on, err = q.fromJoin(d, cfg, p)
 		if err != nil {
 			return "", err
 		}
@@ -131,7 +138,7 @@ func (q *updateQuery) build(d Driver, p *[]any) (string, error) {
 		if on != "" {
 			wh = append(wh, on)
 		}
-		w, err := newExpressionBuilder(q.where, d).build(p)
+		w, err := newExpressionBuilder(q.where, d, cfg).build(p)
 		if err != nil {
 			return "", err
 		}
@@ -153,14 +160,14 @@ func (q *updateQuery) build(d Driver, p *[]any) (string, error) {
 	return sb.String(), nil
 }
 
-func (q *updateQuery) fromJoin(d Driver, p *[]any) (string, string, error) {
+func (q *updateQuery) fromJoin(d Driver, cfg *builderCfg, p *[]any) (string, string, error) {
 	var sb strings.Builder
 	var on string
 	for idx, f := range q.from {
 		sb.WriteString(f.join)
 		sb.WriteString(" ")
 		if qq, ok := f.query.(*selectQuery); ok {
-			s, err := qq.build(d, p)
+			s, err := qq.build(d, cfg, p)
 			if err != nil {
 				return "", "", err
 			}

@@ -24,6 +24,10 @@ type ScannableModel[Model any] interface {
 	Returnable
 }
 
+type Mappable interface {
+	Mappings() map[string]string
+}
+
 type selectable interface {
 	Returning(fields ...string) SelectQuery
 }
@@ -36,6 +40,21 @@ type updatable interface {
 	Returning(fields ...string) UpdateQuery
 }
 
+type repositoryConfig struct {
+	mappings map[string]string
+}
+
+type repositoryOption func(config *repositoryConfig) error
+
+func WithExtraMapping(mapping map[string]string) repositoryOption {
+	return func(r *repositoryConfig) error {
+		for k, v := range mapping {
+			r.mappings[k] = v
+		}
+		return nil
+	}
+}
+
 type Repository[Model any] interface {
 	Transactional
 	Get(ctx context.Context, builder Builder) (*Model, error)
@@ -44,16 +63,31 @@ type Repository[Model any] interface {
 	Count(ctx context.Context, query CountBuilder) (int, error)
 }
 
-func NewRepository[Model any, _ ScannableModel[Model]](connection Db) (*repository[Model], error) {
+func NewRepository[Model any, _ ScannableModel[Model]](connection Db, opts ...repositoryOption) (*repository[Model], error) {
 	var m Model
 	if _, ok := any(m).(Scannable); ok {
 		return nil, fmt.Errorf("type %T implements interface sql.Scannable with a value receiver but pointer receiver required", m)
 	}
-	return &repository[Model]{DB: connection}, nil
+	config := &repositoryConfig{
+		mappings: make(map[string]string),
+	}
+	if mm, ok := any(m).(Mappable); ok {
+		for k, v := range mm.Mappings() {
+			config.mappings[k] = v
+		}
+	}
+	for _, opt := range opts {
+		if err := opt(config); err != nil {
+			return nil, err
+		}
+	}
+
+	return &repository[Model]{DB: connection, mappings: config.mappings}, nil
 }
 
 type repository[Model any] struct {
-	DB Db
+	DB       Db
+	mappings map[string]string
 }
 
 func (r *repository[Model]) Begin(ctx context.Context) (context.Context, func() error, func() error, error) {
@@ -98,7 +132,7 @@ func (r *repository[Model]) Get(ctx context.Context, builder Builder) (_ *Model,
 	} else if ret, ok := builder.(selectable); ok {
 		ret.Returning(returning...)
 	}
-	q, args, err := builder.Build(r.DB.Driver())
+	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
 	if err != nil {
 		return &model, fmt.Errorf("%w (%s, %v)", err, q, args)
 	}

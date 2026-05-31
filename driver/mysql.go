@@ -4,20 +4,28 @@ import (
 	"strings"
 )
 
-func NewMysql() *driver {
-	return NewDriver(&mysqlDriver{}, map[string][]string{
-		"=":       {"=", "eq", "in"},
-		"!=":      {"!=", "ne", "neq", "nin"},
-		">":       {">", "gt"},
-		">=":      {">=", "gte", "ge"},
-		"<":       {"<", "lt"},
-		"<=":      {"<=", "lte", "le"},
-		"between": {"between"},
-		"like":    {"like", "ilike"},
-	})
+func NewMysql() *mysqlDriver {
+	return &mysqlDriver{
+		driver: newDriver(map[string][]string{
+			"=":       {"=", "eq", "in"},
+			"!=":      {"!=", "ne", "neq", "nin"},
+			">":       {">", "gt"},
+			">=":      {">=", "gte", "ge"},
+			"<":       {"<", "lt"},
+			"<=":      {"<=", "lte", "le"},
+			"between": {"between"},
+			"like":    {"like", "ilike"},
+		}),
+	}
 }
 
-type mysqlDriver struct{}
+type mysqlDriver struct {
+	*driver
+}
+
+func (m mysqlDriver) Field(field string, operation string, value any, params *[]any) (string, *[]any, error) {
+	return m.driver.field(m, field, operation, value, params)
+}
 
 func (m mysqlDriver) Returning() bool {
 	return false

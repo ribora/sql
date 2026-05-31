@@ -4,20 +4,28 @@ import (
 	"strings"
 )
 
-func NewSqlite() *driver {
-	return NewDriver(&sqliteDriver{}, map[string][]string{
-		"=":       {"=", "eq", "in"},
-		"!=":      {"!=", "ne", "neq", "nin"},
-		">":       {">", "gt"},
-		">=":      {">=", "gte", "ge"},
-		"<":       {"<", "lt"},
-		"<=":      {"<=", "lte", "le"},
-		"between": {"between"},
-		"like":    {"like", "ilike"},
-	})
+func NewSqlite() *sqliteDriver {
+	return &sqliteDriver{
+		driver: newDriver(map[string][]string{
+			"=":       {"=", "eq", "in"},
+			"!=":      {"!=", "ne", "neq", "nin"},
+			">":       {">", "gt"},
+			">=":      {">=", "gte", "ge"},
+			"<":       {"<", "lt"},
+			"<=":      {"<=", "lte", "le"},
+			"between": {"between"},
+			"like":    {"like", "ilike"},
+		}),
+	}
 }
 
-type sqliteDriver struct{}
+type sqliteDriver struct {
+	*driver
+}
+
+func (p sqliteDriver) Field(field string, operation string, value any, params *[]any) (string, *[]any, error) {
+	return p.driver.field(p, field, operation, value, params)
+}
 
 func (p sqliteDriver) Returning() bool {
 	return true

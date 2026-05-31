@@ -101,16 +101,20 @@ func (q *selectQuery) filter(field any) string {
 	return v
 }
 
-func (q *selectQuery) Build(d Driver) (string, []any, error) {
+func (q *selectQuery) Build(d Driver, opts ...BuildOption) (string, []any, error) {
+	cfg, err := newBuilderCfg(opts)
+	if err != nil {
+		return "", nil, err
+	}
 	var params []any
-	s, err := q.build(d, &params)
+	s, err := q.build(d, cfg, &params)
 	if err != nil {
 		return "", nil, err
 	}
 	return s, params, nil
 }
 
-func (q *selectQuery) build(d Driver, p *[]any) (string, error) {
+func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error) {
 	if q.fail != nil {
 		return "", q.fail
 	}
@@ -133,7 +137,7 @@ func (q *selectQuery) build(d Driver, p *[]any) (string, error) {
 		sb.WriteString(f.join)
 		sb.WriteString(" ")
 		if qq, ok := f.query.(*selectQuery); ok {
-			s, err := qq.build(d, p)
+			s, err := qq.build(d, cfg, p)
 			if err != nil {
 				return "", err
 			}
@@ -153,7 +157,7 @@ func (q *selectQuery) build(d Driver, p *[]any) (string, error) {
 	}
 
 	if q.where != nil {
-		w, err := newExpressionBuilder(q.where, d).build(p)
+		w, err := newExpressionBuilder(q.where, d, cfg).build(p)
 		if err != nil {
 			return "", err
 		}
