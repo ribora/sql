@@ -22,6 +22,8 @@ func newExpressionBuilder(e criteria.Expression, builder Driver, cfg *builderCfg
 	return &exprBuilder{driver: builder, e: e, cfg: cfg}
 }
 
+type Field string
+
 type exprBuilder struct {
 	e      criteria.Expression
 	driver Driver
@@ -69,16 +71,9 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 			value := v[2]
 
 			if f, ok := field.(string); ok {
-				if m, ok := e.cfg.mappings[f]; ok {
-					field = m
-				} else {
-					// protect against injections
-					if filterReg.MatchString(f) {
-						return "", fmt.Errorf("invalid characters in field name: %q", f)
-					}
-					field = lowerReg.ReplaceAllStringFunc(f, func(s string) string {
-						return "_" + strings.ToLower(s)
-					})
+				field, err = sanitize(f, e.cfg.mappings)
+				if err != nil {
+					return "", err
 				}
 			} else {
 				return "", fmt.Errorf("unsupported type for field '%s'", field)
@@ -90,6 +85,13 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 					return "", err
 				}
 				q, params, err = e.driver.Field(field.(string), operation, driver.Raw(sub), params)
+			} else if r, ok := value.(Field); ok {
+				var m string
+				m, err = sanitize(string(r), e.cfg.mappings)
+				if err != nil {
+					return "", err
+				}
+				q, params, err = e.driver.Field(field.(string), operation, driver.Raw(m), params)
 			} else {
 				q, params, err = e.driver.Field(field.(string), operation, value, params)
 			}
@@ -117,4 +119,19 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 	sb.WriteString(strings.Join(query, ") "+string(strategy)+" ("))
 	sb.WriteString(")")
 	return sb.String(), nil
+}
+
+func sanitize(f string, m map[string]string) (string, error) {
+	if r, ok := m[f]; ok {
+		f = r
+	} else {
+		// protect against injections
+		if filterReg.MatchString(f) {
+			return "", fmt.Errorf("invalid characters in field name: %q", f)
+		}
+		f = lowerReg.ReplaceAllStringFunc(f, func(s string) string {
+			return "_" + strings.ToLower(s)
+		})
+	}
+	return f, nil
 }
