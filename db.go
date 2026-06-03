@@ -68,8 +68,8 @@ func (t *tracedDb) Begin(ctx context.Context) (tx Tx, err error) {
 	txCtx, span := tracer.Start(ctx, "sql.transaction",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system.name", t.system),
-			hilton.StringAttr("db.operation.name", "begin"),
+			hilton.Attr("db.system.name", t.system),
+			hilton.Attr("db.operation.name", "begin"),
 		),
 	)
 	start := time.Now()
@@ -146,9 +146,9 @@ func (t *tracedTx) QueryRow(ctx context.Context, query string, args ...any) Row 
 	_, span := t.tracer.Start(t.txCtx, "sql.queryRow",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system.name", t.system),
-			hilton.StringAttr("db.operation.name", "queryRow"),
-			hilton.StringAttr("db.query.text", query),
+			hilton.Attr("db.system.name", t.system),
+			hilton.Attr("db.operation.name", "queryRow"),
+			hilton.Attr("db.query.text", query),
 		),
 	)
 
@@ -183,8 +183,8 @@ func (t *tracedTx) Commit(ctx context.Context) (err error) {
 	_, span := t.tracer.Start(t.txCtx, "sql.commit",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system.name", t.system),
-			hilton.StringAttr("db.operation.name", "commit"),
+			hilton.Attr("db.system.name", t.system),
+			hilton.Attr("db.operation.name", "commit"),
 		),
 	)
 	callCtx := hilton.ContextWithSpan(ctx, span)
@@ -203,8 +203,8 @@ func (t *tracedTx) Rollback(ctx context.Context) (err error) {
 	_, span := t.tracer.Start(t.txCtx, "sql.rollback",
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system.name", t.system),
-			hilton.StringAttr("db.operation.name", "rollback"),
+			hilton.Attr("db.system.name", t.system),
+			hilton.Attr("db.operation.name", "rollback"),
 		),
 	)
 	callCtx := hilton.ContextWithSpan(ctx, span)
@@ -222,9 +222,9 @@ func doOp[T any](t *tracedTx, ctx context.Context, op, query string, fn func(con
 	_, span := t.tracer.Start(t.txCtx, "sql."+op,
 		hilton.WithSpanKind(hilton.SpanKindClient),
 		hilton.WithAttributes(
-			hilton.StringAttr("db.system.name", t.system),
-			hilton.StringAttr("db.operation.name", op),
-			hilton.StringAttr("db.query.text", query),
+			hilton.Attr("db.system.name", t.system),
+			hilton.Attr("db.operation.name", op),
+			hilton.Attr("db.query.text", query),
 		),
 	)
 	callCtx := hilton.ContextWithSpan(ctx, span)
@@ -275,11 +275,11 @@ func recordSpanErr(span hilton.Span, err error) {
 
 func recordDb(ctx context.Context, duration hilton.Histogram, system, op string, took float64, err error) {
 	attrs := []hilton.Attribute{
-		hilton.StringAttr("db.system.name", system),
-		hilton.StringAttr("db.operation.name", op),
+		hilton.Attr("db.system.name", system),
+		hilton.Attr("db.operation.name", op),
 	}
 	if t := errorType(err); t != "" {
-		attrs = append(attrs, hilton.StringAttr("error.type", t))
+		attrs = append(attrs, hilton.Attr("error.type", t))
 	}
 	duration.Record(ctx, took, attrs...)
 }
