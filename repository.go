@@ -190,7 +190,7 @@ func (r *repository[Model]) Select(ctx context.Context, builder Builder) (models
 	} else if ret, ok := builder.(selectable); ok {
 		ret.Returning(returning...)
 	}
-	q, args, err := builder.Build(r.DB.Driver())
+	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
 	if err != nil {
 		return nil, fmt.Errorf("%w (%s, %v)", err, q, args)
 	}
@@ -251,7 +251,7 @@ func (r *repository[Model]) Delete(ctx context.Context, builder DeleteBuilder) (
 		}
 	}
 
-	q, args, err := builder.Build(r.DB.Driver())
+	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func (r *repository[Model]) Count(ctx context.Context, builder CountBuilder) (to
 		}
 	}
 
-	q, args, err := builder.Build(r.DB.Driver())
+	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
 	if err != nil {
 		return 0, err
 	}
