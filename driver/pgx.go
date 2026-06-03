@@ -60,6 +60,9 @@ func (p pgxDriver) Field(field string, operation string, value any, params *[]an
 
 	v := reflect.ValueOf(value)
 	if v.Kind() == reflect.Slice {
+		if s, ok := homogenizeSlice(v); ok {
+			value = s
+		}
 		switch operation {
 		case "=", "in":
 			if v.Len() == 0 {
@@ -120,4 +123,29 @@ func (p pgxDriver) Conflict(conflict string, updates []string) string {
 
 func (p pgxDriver) UpdateAsJoin() bool {
 	return false
+}
+
+func homogenizeSlice(rv reflect.Value) (any, bool) {
+	if rv.Type().Elem().Kind() != reflect.Interface {
+		return nil, false
+	}
+	if rv.Len() == 0 {
+		return nil, false
+	}
+	first := rv.Index(0).Interface()
+	if first == nil {
+		return nil, false
+	}
+	elemType := reflect.TypeOf(first)
+	for i := 1; i < rv.Len(); i++ {
+		e := rv.Index(i).Interface()
+		if e == nil || reflect.TypeOf(e) != elemType {
+			return nil, false
+		}
+	}
+	out := reflect.MakeSlice(reflect.SliceOf(elemType), rv.Len(), rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		out.Index(i).Set(reflect.ValueOf(rv.Index(i).Interface()))
+	}
+	return out.Interface(), true
 }
