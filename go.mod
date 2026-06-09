@@ -1,6 +1,6 @@
 module gitlab.com/gorib/sql
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -9,7 +9,7 @@ require (
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/stretchr/testify v1.11.1
-	gitlab.com/gorib/criteria v1.0.0
+	gitlab.com/gorib/criteria v1.0.1
 	gitlab.com/gorib/hilton v1.1.0
 	modernc.org/sqlite v1.42.2
 )

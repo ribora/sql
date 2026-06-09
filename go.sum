@@ -52,8 +52,8 @@ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UV
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-gitlab.com/gorib/criteria v1.0.0 h1:GzmuEYl0oHIcxXoiIQErbQj1j2fZorHn2LKTa4gQlnY=
-gitlab.com/gorib/criteria v1.0.0/go.mod h1:z6oj5KnovZybNDhpXAksYT57vZOpJOkR6eqVwZpKgcI=
+gitlab.com/gorib/criteria v1.0.1 h1:qteo0ifqcVdZmHLdVBX8Rbwuyxv2v59ofbflSV/z/BI=
+gitlab.com/gorib/criteria v1.0.1/go.mod h1:GrR0E/q6Rjs/qeKwXq7+Od35X5hWsq/zZZqsAFFn8AY=
 gitlab.com/gorib/hilton v1.1.0 h1:seOKd2L13DfnWTMdDHb8Ih4yFt+ILbUc0MyoPmpyExs=
 gitlab.com/gorib/hilton v1.1.0/go.mod h1:sWcGPiMLilFCLN9Fb8XKTRACl+Z+LGrw9w++5fgk/Zs=
 golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b h1:M2rDM6z3Fhozi9O7NWsxAkg/yqS/lQJ6PmkyIV3YP+o=
