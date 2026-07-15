@@ -71,7 +71,7 @@ func NewRepository[Model any, _ ScannableModel[Model]](connection Db, opts ...re
 	config := &repositoryConfig{
 		mappings: make(map[string]string),
 	}
-	if mm, ok := any(m).(Mappable); ok {
+	if mm, ok := any(&m).(Mappable); ok {
 		for k, v := range mm.Mappings() {
 			config.mappings[k] = v
 		}
