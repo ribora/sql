@@ -85,7 +85,7 @@ func (q *insertQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		if b, ok := field.(builder); ok {
 			return b.build(d, cfg, p)
 		}
-		return filter(field)
+		return filter(field, cfg.mappings)
 	}
 
 	var sb strings.Builder

@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	filterReg = regexp.MustCompile(`[^a-zA-Z0-9_.\s-]`)
+	filterReg = regexp.MustCompile(`[^a-zA-Z0-9_.\s*-]`)
 	lowerReg  = regexp.MustCompile(`([A-Z])`)
 )
 
@@ -134,4 +134,31 @@ func sanitize(f string, m map[string]string) (string, error) {
 		})
 	}
 	return f, nil
+}
+
+func sanitizeOrder(item string, m map[string]string) (string, error) {
+	parts := strings.Fields(item)
+	if len(parts) == 0 {
+		return "", nil
+	}
+	field, err := sanitize(parts[0], m)
+	if err != nil {
+		return "", err
+	}
+	tail := make([]string, 0, len(parts)-1)
+	for _, part := range parts[1:] {
+		tail = append(tail, strings.ToLower(part))
+	}
+	clause := []string{field}
+	if len(tail) > 0 && (tail[0] == "asc" || tail[0] == "desc") {
+		clause = append(clause, tail[0])
+		tail = tail[1:]
+	}
+	if len(tail) > 0 {
+		if len(tail) != 2 || tail[0] != "nulls" || (tail[1] != "first" && tail[1] != "last") {
+			return "", fmt.Errorf("unsupported sort clause: %q", item)
+		}
+		clause = append(clause, tail...)
+	}
+	return strings.Join(clause, " "), nil
 }

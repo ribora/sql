@@ -35,7 +35,6 @@ type selectQuery struct {
 	window    string
 	offset    uint
 	limit     uint
-	fail      error
 }
 
 func (q *selectQuery) From(main fromMain, opts ...fromOptions) SelectQuery {
@@ -59,18 +58,12 @@ func (q *selectQuery) Page(page int, count int) SelectQuery {
 }
 
 func (q *selectQuery) Sort(sort ...string) SelectQuery {
-	q.sort = q.sort[:0]
-	for _, s := range sort {
-		q.sort = append(q.sort, q.filter(s))
-	}
+	q.sort = append(q.sort[:0], sort...)
 	return q
 }
 
 func (q *selectQuery) Returning(fields ...string) SelectQuery {
-	q.returning = q.returning[:0]
-	for _, field := range fields {
-		q.returning = append(q.returning, q.filter(field))
-	}
+	q.returning = append(q.returning[:0], fields...)
 	return q
 }
 
@@ -85,20 +78,8 @@ func (q *selectQuery) Window(window string) SelectQuery {
 }
 
 func (q *selectQuery) Group(fields ...string) SelectQuery {
-	q.group = q.group[:0]
-	for _, field := range fields {
-		q.group = append(q.group, q.filter(field))
-	}
+	q.group = append(q.group[:0], fields...)
 	return q
-}
-
-func (q *selectQuery) filter(field any) string {
-	v, err := filter(field)
-	if err != nil {
-		q.fail = err
-		return ""
-	}
-	return v
 }
 
 func (q *selectQuery) Build(d Driver, opts ...BuildOption) (string, []any, error) {
@@ -115,19 +96,35 @@ func (q *selectQuery) Build(d Driver, opts ...BuildOption) (string, []any, error
 }
 
 func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error) {
-	if q.fail != nil {
-		return "", q.fail
+	returning, err := filterAll(q.returning, cfg.mappings)
+	if err != nil {
+		return "", err
 	}
-	var sb strings.Builder
-	sb.WriteString("select ")
-	if len(q.fields) == 0 {
-		if len(q.returning) > 0 {
-			q.fields = q.returning
-		} else {
-			q.fields = []string{"*"}
+	group, err := filterAll(q.group, cfg.mappings)
+	if err != nil {
+		return "", err
+	}
+	sort := make([]string, 0, len(q.sort))
+	for _, item := range q.sort {
+		order, err := sanitizeOrder(item, cfg.mappings)
+		if err != nil {
+			return "", err
+		}
+		if order != "" {
+			sort = append(sort, order)
 		}
 	}
-	sb.WriteString(strings.Join(q.fields, ", "))
+
+	var sb strings.Builder
+	sb.WriteString("select ")
+	fields := q.fields
+	if len(fields) == 0 {
+		fields = []string{"*"}
+		if len(returning) > 0 {
+			fields = returning
+		}
+	}
+	sb.WriteString(strings.Join(fields, ", "))
 	if len(q.from) == 0 {
 		return "", fmt.Errorf("no table specified for select")
 	}
@@ -172,16 +169,16 @@ func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		sb.WriteString(q.window)
 	}
 
-	if len(q.group) > 0 {
+	if len(group) > 0 {
 		sb.WriteString(" group by ")
-		sb.WriteString(strings.Join(q.group, ","))
+		sb.WriteString(strings.Join(group, ","))
 	}
 
-	if len(q.sort) == 0 {
-		q.sort = []string{"id asc"}
+	if len(sort) == 0 {
+		sort = []string{"id asc"}
 	}
 	sb.WriteString(" order by ")
-	sb.WriteString(strings.Join(q.sort, ","))
+	sb.WriteString(strings.Join(sort, ","))
 
 	if q.offset != 0 {
 		sb.WriteString(" offset ")

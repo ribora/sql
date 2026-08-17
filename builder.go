@@ -2,13 +2,6 @@ package sql
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
-)
-
-var (
-	filterRegex = regexp.MustCompile(`[^a-zA-Z0-9_.\s*-]`)
-	lowerRegex  = regexp.MustCompile(`([A-Z])`)
 )
 
 func newBuilderCfg(opts []BuildOption) (*builderCfg, error) {
@@ -52,12 +45,22 @@ type CountBuilder interface {
 	count()
 }
 
-func filter(field any) (string, error) {
-	if f, ok := field.(string); ok {
-		f = filterRegex.ReplaceAllString(f, "")
-		return lowerRegex.ReplaceAllStringFunc(f, func(s string) string {
-			return "_" + strings.ToLower(s)
-		}), nil
+func filter(field any, m map[string]string) (string, error) {
+	f, ok := field.(string)
+	if !ok {
+		return "", fmt.Errorf("unsupported type for field '%s'", field)
 	}
-	return "", fmt.Errorf("unsupported type for field '%s'", field)
+	return sanitize(f, m)
+}
+
+func filterAll(fields []string, m map[string]string) ([]string, error) {
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		f, err := filter(field, m)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, f)
+	}
+	return result, nil
 }

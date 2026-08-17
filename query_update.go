@@ -27,7 +27,6 @@ type updateQuery struct {
 	from      []*from
 	where     criteria.Expression
 	returning []string
-	fail      error
 }
 
 func (q *updateQuery) Table(main fromTable) UpdateQuery {
@@ -48,20 +47,8 @@ func (q *updateQuery) Where(e criteria.Expression) UpdateQuery {
 }
 
 func (q *updateQuery) Returning(fields ...string) UpdateQuery {
-	q.returning = q.returning[:0]
-	for _, field := range fields {
-		q.returning = append(q.returning, q.filter(field))
-	}
+	q.returning = append(q.returning[:0], fields...)
 	return q
-}
-
-func (q *updateQuery) filter(field any) string {
-	v, err := filter(field)
-	if err != nil {
-		q.fail = err
-		return ""
-	}
-	return v
 }
 
 func (q *updateQuery) Build(d Driver, opts ...BuildOption) (string, []any, error) {
@@ -78,11 +65,12 @@ func (q *updateQuery) Build(d Driver, opts ...BuildOption) (string, []any, error
 }
 
 func (q *updateQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error) {
-	if q.fail != nil {
-		return "", q.fail
-	}
 	if q.table == nil {
 		return "", errors.New("table is required")
+	}
+	returning, err := filterAll(q.returning, cfg.mappings)
+	if err != nil {
+		return "", err
 	}
 
 	var sb strings.Builder
@@ -152,9 +140,9 @@ func (q *updateQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		}
 	}
 
-	if len(q.returning) > 0 {
+	if len(returning) > 0 {
 		sb.WriteString(" returning ")
-		sb.WriteString(strings.Join(q.returning, ","))
+		sb.WriteString(strings.Join(returning, ","))
 	}
 
 	return sb.String(), nil
