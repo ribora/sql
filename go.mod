@@ -9,8 +9,8 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/stretchr/testify v1.12.1
-	gitlab.com/gorib/criteria v1.0.1
-	gitlab.com/gorib/hilton v1.1.0
+	gitlab.com/gorib/criteria v1.0.2
+	gitlab.com/gorib/hilton v1.1.2
 	modernc.org/sqlite v1.57.0
 )
 
