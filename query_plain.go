@@ -45,10 +45,7 @@ func (b *plainBuilder) build(driver Driver, _ *builderCfg, p *[]any) (string, er
 		}
 	}
 
-	for _, arg := range b.args {
-		*p = append(*p, arg)
-	}
-
+	*p = append(*p, b.args...)
 	if placeholderCount > 0 && placeholderCount != len(*p) {
 		return "", fmt.Errorf("%w: expected %d, got %d", ErrArgumentsMismatch, placeholderCount, len(*p))
 	}

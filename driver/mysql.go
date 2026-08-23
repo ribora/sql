@@ -24,7 +24,7 @@ type mysqlDriver struct {
 }
 
 func (m mysqlDriver) Field(field string, operation string, value any, params *[]any) (string, *[]any, error) {
-	return m.driver.field(m, field, operation, value, params)
+	return m.field(m, field, operation, value, params)
 }
 
 func (m mysqlDriver) Returning() bool {

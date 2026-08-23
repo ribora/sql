@@ -68,7 +68,6 @@ func (p pgxDriver) Field(field string, operation string, value any, params *[]an
 			if v.Len() == 0 {
 				return "false", params, nil
 			}
-			operation = "="
 			*params = append(*params, value)
 			return field + " = ANY(" + p.Placeholder(len(*params)) + ")", params, nil
 		case "!=", "not in":

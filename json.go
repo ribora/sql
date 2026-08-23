@@ -31,11 +31,11 @@ func (f *Json[T]) Value() (driver.Value, error) {
 
 func (f *Json[T]) Scan(value any) error {
 	var v []byte
-	switch value.(type) {
+	switch vv := value.(type) {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
 		v = []byte(fmt.Sprintf("%v", value))
 	case string:
-		v = []byte(value.(string))
+		v = []byte(vv)
 	default:
 		v = value.([]byte)
 	}

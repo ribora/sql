@@ -24,7 +24,7 @@ type sqliteDriver struct {
 }
 
 func (p sqliteDriver) Field(field string, operation string, value any, params *[]any) (string, *[]any, error) {
-	return p.driver.field(p, field, operation, value, params)
+	return p.field(p, field, operation, value, params)
 }
 
 func (p sqliteDriver) Returning() bool {

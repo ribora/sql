@@ -85,6 +85,9 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 					return "", err
 				}
 				q, params, err = e.driver.Field(field.(string), operation, driver.Raw(sub), params)
+				if err != nil {
+					return "", err
+				}
 			} else if r, ok := value.(Field); ok {
 				var m string
 				m, err = sanitize(string(r), e.cfg.mappings)

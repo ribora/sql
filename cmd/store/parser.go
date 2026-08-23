@@ -168,18 +168,19 @@ func parse(fileName string) (string, []*Lexem) {
 								readonly = true
 							}
 							if converts := strings.Split(part, ":"); len(converts) == 2 {
-								if converts[0] == "convert" {
+								switch converts[0] {
+								case "convert":
 									convert = converts[1]
 									if convert == "csv" {
 										lexem.addImport("\"strings\"")
 									}
-								} else if converts[0] == "updates" {
+								case "updates":
 									groups := strings.Split(converts[1], "|")
 									updateGroups = groups
 									for _, g := range groups {
 										lexem.addUpdateGroup(g)
 									}
-								} else if converts[0] == "inserts" {
+								case "inserts":
 									groups := strings.Split(converts[1], "|")
 									insertGroups = groups
 									for _, g := range groups {

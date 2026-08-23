@@ -53,17 +53,13 @@ func (q *insertQuery) Values(values ...any) InsertQuery {
 func (q *insertQuery) Conflict(conflict string, excluded ...string) InsertQuery {
 	q.conflictKey = conflict
 	q.conflicts = q.conflicts[:0]
-	for _, exclude := range excluded {
-		q.conflicts = append(q.conflicts, exclude)
-	}
+	q.conflicts = append(q.conflicts, excluded...)
 	return q
 }
 
 func (q *insertQuery) Returning(fields ...string) InsertQuery {
 	q.returning = q.returning[:0]
-	for _, field := range fields {
-		q.returning = append(q.returning, field)
-	}
+	q.returning = append(q.returning, fields...)
 	return q
 }
 
@@ -187,7 +183,7 @@ func (q *insertQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 			}
 			conflicts = append(conflicts, f)
 		}
-		sb.WriteString(d.Conflict(strings.Join(keys, ","), q.conflicts))
+		sb.WriteString(d.Conflict(strings.Join(keys, ","), conflicts))
 	}
 
 	if len(returning) > 0 {

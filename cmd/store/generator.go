@@ -174,6 +174,7 @@ func (m *{{ .Lexem.Name }}) Scan() []any {
 	if err != nil {
 		panic(err)
 	}
+	//nolint:errcheck
 	defer out.Close()
 
 	if _, err := out.Write(formatted); err != nil {
