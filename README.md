@@ -131,7 +131,8 @@ type storedUser struct {
 
     Email     string    `db:"email"`
     LastLogin time.Time `db:"last_login" store:",updates:Status"`
-    Roles     []string  `db:"roles" store:",convert:csv"`
+    // The column is a nullable text; the model field is a []string.
+    Roles     *string   `db:"roles" store:"Roles,convert:csv"`
 
     // Override the source field:
     // the Name column in the DB is populated from the FullName field of the domain model.
@@ -148,7 +149,7 @@ func newStoredUser(m *model.User) *storedUser {
         Id:    m.Id,
         Email: m.Email,
         Name:  m.FullName, // uses the overridden field name
-        Roles: func(v []string) *string { /* convert:csv logic */ }(m.Roles),
+        Roles: sql.JoinCsv(m.Roles),
     }
 }
 
@@ -158,7 +159,7 @@ func (m *storedUser) Unwrap() *model.User {
         Id:       m.Id,
         Email:    m.Email,
         FullName: m.Name, // mapped back to FullName
-        Roles:    func(v *string) []string { /* convert:csv logic */ }(m.Roles),
+        Roles:    sql.SplitCsv(m.Roles),
     }
 }
 
@@ -206,7 +207,7 @@ Use these when you need a custom mapping implementation.
 | `store:",readonly"` | Excluded from the base `Inserts()` and `Updates()`. |
 | `store:",updates:Group1\|Group2"` | Included in the named update methods. Overrides `readonly`. |
 | `store:",inserts:Group1\|Group2"` | Included in the named insert methods. Overrides `readonly`. |
-| `store:",convert:csv"` | Maps `[]string` to/from a comma-separated string. |
+| `store:",convert:csv"` | Maps a model `[]string` to a stored `*string` through `sql.JoinCsv` / `sql.SplitCsv`. Lossy: an element containing a comma comes back as two, and no elements is NULL. |
 
 ---
 
@@ -286,8 +287,73 @@ type storedPayment struct {
 
 ---
 
+## 7. Telemetry
+
+`NewDb` returns the pool wrapped in a tracing decorator, so every operation
+produces a `CLIENT` span and a `db.client.operation.duration` observation
+without the caller doing anything.
+
+| Attribute | On | Values |
+|---|---|---|
+| `db.system.name` | span and metric | `postgresql`, `mysql`, `sqlite` |
+| `db.operation.name` | span and metric | `begin`, `query`, `queryRow`, `exec`, `commit`, `rollback` |
+| `error.type` | metric, on failure | `conflict`, `deadlock`, `no_rows`, `bad_request`, `internal`, `connect`, `tx` |
+| `db.query.text` | **span only** | the statement |
+
+The split in that last row is the point: operation names are a closed set and
+make a safe metric label, a query string is not. `error.type` comes from the
+same classification as `sql.NewError`, so a metric and a handled error agree on
+what went wrong.
+
+Durations are in seconds with explicit second-scale buckets — the SDK default is
+millisecond-scaled and would put every query in one bucket.
+
+The provider is read from the context per operation rather than captured at
+construction, so a query inherits the trace of the request that issued it. The
+instruments themselves are cached per provider by `hilton.NewInstruments`
+instead of being rebuilt on every call.
+
+A transaction is one span: `Begin` opens it, `Commit` or `Rollback` closes it,
+and the statements inside are children. A transaction that is never finished is
+closed by a `runtime.AddCleanup` finalizer rather than leaking the span.
+
+### Pool gauges
+
+Pool occupancy is a separate constructor, because it is read at collection time
+and so needs a provider for as long as the pool lives, not the per-operation one
+from the context:
+
+```go
+t, err := sql.NewPoolTracing(provider, db)
+defer t.Close()
+```
+
+It reports `db.client.connection.count` split by `db.client.connection.state`
+into `idle` and `used`, both from one snapshot so the two cannot disagree.
+`PoolTracing` is an `io.Closer` that unregisters the callback, and diogen
+collects it, so a container-wired pool stops being polled once closed.
+
+The numbers are read per driver — `pgxpool.Stat` on the pgx path and
+`sql.DB.Stats` on the `database/sql` path. `DbSql()` is deliberately not used
+for this: on the pgx path it opens a fresh `*sql.DB` unrelated to the live pool,
+whose statistics are always zero. A `Db` that cannot report either is accepted
+and reports nothing, since a gauge stuck at zero is worse than no gauge.
+
+waffle registers both the pool and its gauges under `config/service/sql`, as
+`di.Fallback()` — a service that needs different options declares its own.
+
+---
+
 ## Installing the `store` Utility
 
+Register it as a module tool, so the version is pinned in `go.mod` alongside the other generators:
+
 ```sh
-go install ./storage/sql/cmd/store
+go get -tool gitlab.com/gorib/sql/cmd/store
+```
+
+It is then invoked as `go tool store` — which is what the `//go:generate` line in a stored struct file expects:
+
+```go
+//go:generate go tool store $GOFILE
 ```

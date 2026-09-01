@@ -59,11 +59,28 @@ func (t *tracedDb) Connect(ctx context.Context) (Db, error) {
 	return t, nil
 }
 
+// Cached: the provider arrives per operation, and building instruments on every
+// transaction is not free.
+var instruments = hilton.NewInstruments(func(p hilton.Provider) sqlState {
+	return sqlState{
+		tracer: p.Tracer(instrumentationName),
+		duration: p.Meter(instrumentationName).Histogram("db.client.operation.duration",
+			hilton.WithDescription("Duration of SQL client operations"),
+			hilton.WithUnit("s"),
+			hilton.WithSecondsBoundaries(),
+		),
+	}
+})
+
+type sqlState struct {
+	tracer   hilton.Tracer
+	duration hilton.Histogram
+}
+
 func (t *tracedDb) Begin(ctx context.Context) (tx Tx, err error) {
-	provider := hilton.ProviderFromContext(ctx)
-	tracer := provider.Tracer(instrumentationName)
-	meter := provider.Meter(instrumentationName)
-	duration := meter.Histogram("db.client.operation.duration", hilton.WithUnit("s"))
+	state := instruments.FromContext(ctx)
+	tracer := state.tracer
+	duration := state.duration
 
 	txCtx, span := tracer.Start(ctx, "sql.transaction",
 		hilton.WithSpanKind(hilton.SpanKindClient),
@@ -108,6 +125,16 @@ func (t *tracedDb) Begin(ctx context.Context) (tx Tx, err error) {
 
 func (t *tracedDb) Driver() Driver            { return t.inner.Driver() }
 func (t *tracedDb) DbSql() (*dbSql.DB, error) { return t.inner.DbSql() }
+
+func (t *tracedDb) systemName() string { return t.system }
+
+func (t *tracedDb) poolConns() (idle, used int64, ok bool) {
+	conner, isConner := t.inner.(poolConner)
+	if !isConner {
+		return 0, 0, false
+	}
+	return conner.poolConns()
+}
 
 type spanCloser struct {
 	span hilton.Span

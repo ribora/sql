@@ -7,24 +7,25 @@ import (
 	"path/filepath"
 )
 
-func walk(path string, needTree bool) iter.Seq[string] {
-	return func(yield func(string) bool) {
+func walk(path string, needTree bool) iter.Seq2[string, error] {
+	return func(yield func(string, error) bool) {
 		info, err := os.Lstat(path)
 		if err != nil {
-			panic(err)
+			yield("", err)
+			return
 		}
 		inspect(path, fs.FileInfoToDirEntry(info), yield, needTree, true)
 	}
 }
 
-func inspect(path string, d fs.DirEntry, yield func(string) bool, needTree, isRoot bool) bool {
+func inspect(path string, d fs.DirEntry, yield func(string, error) bool, needTree, isRoot bool) bool {
 	if !d.IsDir() {
-		return yield(path)
+		return yield(path, nil)
 	}
-	if d.IsDir() && (needTree || isRoot) {
+	if needTree || isRoot {
 		entities, err := os.ReadDir(path)
 		if err != nil {
-			panic(err)
+			return yield("", err)
 		}
 		for _, entity := range entities {
 			if !inspect(filepath.Join(path, entity.Name()), entity, yield, needTree, false) {

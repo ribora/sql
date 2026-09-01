@@ -53,6 +53,14 @@ func (s *pgxDb) DbSql() (*dbSql.DB, error) {
 	return dbSql.Open("pgx", s.dsn)
 }
 
+func (s *pgxDb) poolConns() (idle, used int64, ok bool) {
+	if s.db == nil {
+		return 0, 0, false
+	}
+	stat := s.db.Stat()
+	return int64(stat.IdleConns()), int64(stat.AcquiredConns()), true
+}
+
 type pgxAdapter struct {
 	pgx.Tx
 }
