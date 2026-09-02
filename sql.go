@@ -59,14 +59,6 @@ func (s *sqlDb) DbSql() (*sql.DB, error) {
 	return s.db, nil
 }
 
-func (s *sqlDb) poolConns() (idle, used int64, ok bool) {
-	if s.db == nil {
-		return 0, 0, false
-	}
-	stats := s.db.Stats()
-	return int64(stats.Idle), int64(stats.InUse), true
-}
-
 type sqlAdapter struct {
 	*sql.Tx
 }

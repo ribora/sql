@@ -126,16 +126,6 @@ func (t *tracedDb) Begin(ctx context.Context) (tx Tx, err error) {
 func (t *tracedDb) Driver() Driver            { return t.inner.Driver() }
 func (t *tracedDb) DbSql() (*dbSql.DB, error) { return t.inner.DbSql() }
 
-func (t *tracedDb) systemName() string { return t.system }
-
-func (t *tracedDb) poolConns() (idle, used int64, ok bool) {
-	conner, isConner := t.inner.(poolConner)
-	if !isConner {
-		return 0, 0, false
-	}
-	return conner.poolConns()
-}
-
 type spanCloser struct {
 	span hilton.Span
 	once sync.Once

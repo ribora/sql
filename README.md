@@ -317,30 +317,8 @@ A transaction is one span: `Begin` opens it, `Commit` or `Rollback` closes it,
 and the statements inside are children. A transaction that is never finished is
 closed by a `runtime.AddCleanup` finalizer rather than leaking the span.
 
-### Pool gauges
-
-Pool occupancy is a separate constructor, because it is read at collection time
-and so needs a provider for as long as the pool lives, not the per-operation one
-from the context:
-
-```go
-t, err := sql.NewPoolTracing(provider, db)
-defer t.Close()
-```
-
-It reports `db.client.connection.count` split by `db.client.connection.state`
-into `idle` and `used`, both from one snapshot so the two cannot disagree.
-`PoolTracing` is an `io.Closer` that unregisters the callback, and diogen
-collects it, so a container-wired pool stops being polled once closed.
-
-The numbers are read per driver — `pgxpool.Stat` on the pgx path and
-`sql.DB.Stats` on the `database/sql` path. `DbSql()` is deliberately not used
-for this: on the pgx path it opens a fresh `*sql.DB` unrelated to the live pool,
-whose statistics are always zero. A `Db` that cannot report either is accepted
-and reports nothing, since a gauge stuck at zero is worse than no gauge.
-
-waffle registers both the pool and its gauges under `config/service/sql`, as
-`di.Fallback()` — a service that needs different options declares its own.
+waffle registers the pool under `config/service/sql`, as `di.Fallback()` — a
+service that needs different options declares its own.
 
 ---
 
