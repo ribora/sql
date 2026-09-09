@@ -10,7 +10,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/stretchr/testify v1.12.1
 	gitlab.com/gorib/criteria v1.0.2
-	gitlab.com/gorib/hilton v1.2.2
+	gitlab.com/gorib/hilton v1.2.3
 	golang.org/x/tools v0.49.0
 	modernc.org/sqlite v1.57.0
 )
