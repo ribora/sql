@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"gitlab.com/gorib/sql/op"
 )
 
 type Raw string
@@ -15,18 +17,18 @@ type Driver interface {
 	UpdateAsJoin() bool
 }
 
-func newDriver(operations map[string][]string) *driver {
-	o := make(map[string]string, len(operations))
-	for k, v := range operations {
-		for _, op := range v {
-			o[op] = k
+func newDriver(operations map[string][]op.Operation) *driver {
+	o := make(map[op.Operation]string, len(operations))
+	for sqlOp, aliases := range operations {
+		for _, alias := range aliases {
+			o[alias] = sqlOp
 		}
 	}
 	return &driver{op: o}
 }
 
 type driver struct {
-	op map[string]string
+	op map[op.Operation]string
 }
 
 func (p driver) field(d Driver, field string, operation string, value any, params *[]any) (string, *[]any, error) {
@@ -37,13 +39,13 @@ func (p driver) field(d Driver, field string, operation string, value any, param
 	operation = o
 
 	if value == nil {
-		op := operation
+		previous := operation
 		operation = map[string]string{
 			"=":  "is null",
 			"!=": "is not null",
 		}[operation]
 		if operation == "" {
-			return "", params, fmt.Errorf("unknown operation %q for nil value", op)
+			return "", params, fmt.Errorf("unknown operation %q for nil value", previous)
 		}
 		return field + " " + operation, params, nil
 	}
@@ -96,6 +98,6 @@ func (p driver) field(d Driver, field string, operation string, value any, param
 }
 
 func (p driver) operation(alias string) (string, bool) {
-	o, found := p.op[alias]
+	o, found := p.op[op.Operation(alias)]
 	return o, found
 }

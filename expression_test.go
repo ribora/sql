@@ -36,6 +36,28 @@ func TestConstructorsMarshalToTheWireTriple(t *testing.T) {
 	assert.Equal(t, string(encoded), string(again))
 }
 
+// The literals are the wire format, not a copy of the op constants: spelling
+// them as op.Eq would let a rename pass through unnoticed.
+func TestConstructorsEmitTheWireOperation(t *testing.T) {
+	cases := map[string]criteria.Condition{
+		"eq":      Eq("f", 1),
+		"ne":      Ne("f", 1),
+		"gt":      Gt("f", 1),
+		"ge":      Ge("f", 1),
+		"lt":      Lt("f", 1),
+		"le":      Le("f", 1),
+		"between": Between("f", 1, 2),
+		"like":    Like("f", "x"),
+		"ilike":   ILike("f", "x"),
+		"json_in": JsonIn("f", 1),
+		"json_eq": JsonEq("f", 1),
+	}
+
+	for operation, condition := range cases {
+		assert.Equal(t, operation, condition.Operation)
+	}
+}
+
 func TestBuildFromTheWireMatchesTheConstructors(t *testing.T) {
 	built := criteria.And(Eq("status", "active"), criteria.Or(Eq("type", "a"), Eq("type", "b")))
 	encoded, err := json.Marshal(built)

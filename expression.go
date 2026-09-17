@@ -2,48 +2,50 @@ package sql
 
 import (
 	"gitlab.com/gorib/criteria"
+
+	"gitlab.com/gorib/sql/op"
 )
 
 func Eq(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "eq", value)
+	return criteria.Cond(field, string(op.Eq), value)
 }
 
 func Ne(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "ne", value)
+	return criteria.Cond(field, string(op.Ne), value)
 }
 
 func Gt(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "gt", value)
+	return criteria.Cond(field, string(op.Gt), value)
 }
 
 func Ge(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "ge", value)
+	return criteria.Cond(field, string(op.Ge), value)
 }
 
 func Lt(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "lt", value)
+	return criteria.Cond(field, string(op.Lt), value)
 }
 
 func Le(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "le", value)
+	return criteria.Cond(field, string(op.Le), value)
 }
 
 func Between(field string, from, to any) criteria.Condition {
-	return criteria.Cond(field, "between", []any{from, to})
+	return criteria.Cond(field, string(op.Between), []any{from, to})
 }
 
 func Like(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "like", value)
+	return criteria.Cond(field, string(op.Like), value)
 }
 
 func ILike(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "ilike", value)
+	return criteria.Cond(field, string(op.ILike), value)
 }
 
 func JsonIn(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "json_in", value)
+	return criteria.Cond(field, string(op.JsonIn), value)
 }
 
 func JsonEq(field string, value any) criteria.Condition {
-	return criteria.Cond(field, "json_eq", value)
+	return criteria.Cond(field, string(op.JsonEq), value)
 }

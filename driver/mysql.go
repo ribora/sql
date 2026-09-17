@@ -2,19 +2,22 @@ package driver
 
 import (
 	"strings"
+
+	"gitlab.com/gorib/sql/op"
 )
 
 func NewMysql() *mysqlDriver {
 	return &mysqlDriver{
-		driver: newDriver(map[string][]string{
-			"=":       {"=", "eq", "in"},
-			"!=":      {"!=", "ne", "neq", "nin"},
-			">":       {">", "gt"},
-			">=":      {">=", "gte", "ge"},
-			"<":       {"<", "lt"},
-			"<=":      {"<=", "lte", "le"},
-			"between": {"between"},
-			"like":    {"like", "ilike"},
+		driver: newDriver(map[string][]op.Operation{
+			"=":       {"=", op.Eq, op.In},
+			"!=":      {"!=", op.Ne, op.Neq, op.Nin},
+			">":       {">", op.Gt},
+			">=":      {">=", op.Gte, op.Ge},
+			"<":       {"<", op.Lt},
+			"<=":      {"<=", op.Lte, op.Le},
+			"between": {op.Between},
+			// No case-insensitive match: ILike collapses to Like here.
+			"like": {op.Like, op.ILike},
 		}),
 	}
 }

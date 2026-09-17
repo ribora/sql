@@ -41,6 +41,37 @@ sqlPostgres, params, _ := q.Build(driver.NewPostgres())
 sqlMysql, params, _ := q.Build(driver.NewMysql())
 ```
 
+### Operations
+
+The operation is a plain string as far as `criteria` is concerned; `sql` owns
+the vocabulary. The `op` package names it, so a condition can be written
+without a literal:
+
+```go
+import "gitlab.com/gorib/sql/op"
+
+criteria.And("id", string(op.Eq), 10)
+sql.Eq("id", 10) // the same condition
+```
+
+**Not every driver supports every operation**, and a driver that does not know
+one fails when the query is built:
+
+| constructor | `op` | Postgres | MySQL | SQLite |
+|---|---|---|---|---|
+| `Eq` `Ne` `Gt` `Ge` `Lt` `Le` | `Eq` … | ✅ | ✅ | ✅ |
+| `Between` `Like` | `Between` `Like` | ✅ | ✅ | ✅ |
+| `ILike` | `ILike` | `ILIKE` | falls back to `LIKE` | falls back to `LIKE` |
+| `JsonIn` | `JsonIn` | `@>` | ❌ | ❌ |
+| `JsonEq` | `JsonEq` | `?` / `?\|` | ❌ | ❌ |
+
+`ILike` is the one that fails quietly: outside Postgres it becomes a
+case-sensitive match instead of an error. The matrix is pinned by
+`driver/operations_test.go`.
+
+Each driver also accepts the raw SQL spelling (`=`, `!=`, `@>`) and the usual
+synonyms (`in`, `neq`, `nin`, `gte`, `lte`).
+
 ### SELECT
 
 ```go

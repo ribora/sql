@@ -5,22 +5,24 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"gitlab.com/gorib/sql/op"
 )
 
 func NewPostgres() *pgxDriver {
 	return &pgxDriver{
-		driver: newDriver(map[string][]string{
-			"=":       {"=", "eq", "in"},
-			"!=":      {"!=", "ne", "neq", "nin"},
-			">":       {">", "gt"},
-			">=":      {">=", "gte", "ge"},
-			"<":       {"<", "lt"},
-			"<=":      {"<=", "lte", "le"},
-			"between": {"between"},
-			"like":    {"like"},
-			"ilike":   {"ilike"},
-			"@>":      {"@>", "json_in"},
-			"?":       {"?", "json_eq"},
+		driver: newDriver(map[string][]op.Operation{
+			"=":       {"=", op.Eq, op.In},
+			"!=":      {"!=", op.Ne, op.Neq, op.Nin},
+			">":       {">", op.Gt},
+			">=":      {">=", op.Gte, op.Ge},
+			"<":       {"<", op.Lt},
+			"<=":      {"<=", op.Lte, op.Le},
+			"between": {op.Between},
+			"like":    {op.Like},
+			"ilike":   {op.ILike},
+			"@>":      {"@>", op.JsonIn},
+			"?":       {"?", op.JsonEq},
 		}),
 	}
 }
@@ -37,13 +39,13 @@ func (p pgxDriver) Field(field string, operation string, value any, params *[]an
 	operation = o
 
 	if value == nil {
-		op := operation
+		previous := operation
 		operation = map[string]string{
 			"=":  "is null",
 			"!=": "is not null",
 		}[operation]
 		if operation == "" {
-			return "", params, fmt.Errorf("unknown operation %q for nil value", op)
+			return "", params, fmt.Errorf("unknown operation %q for nil value", previous)
 		}
 		return field + " " + operation, params, nil
 	}
