@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	filterReg = regexp.MustCompile(`[^a-zA-Z0-9_.\s*-]`)
-	lowerReg  = regexp.MustCompile(`([A-Z])`)
+	identReg      = regexp.MustCompile(`^\w+(\.\w+)*$`)
+	projectionReg = regexp.MustCompile(`^(\*|\w+(\.\w+)*(\.\*)?)$`)
+	lowerReg      = regexp.MustCompile(`([A-Z])`)
 )
 
 func newExpressionBuilder(e criteria.Expression, builder Driver, cfg *builderCfg) *exprBuilder {
@@ -96,18 +97,23 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 }
 
 func sanitize(f string, m map[string]string) (string, error) {
+	return sanitizeAs(f, m, identReg)
+}
+
+func sanitizeProjection(f string, m map[string]string) (string, error) {
+	return sanitizeAs(f, m, projectionReg)
+}
+
+func sanitizeAs(f string, m map[string]string, allowed *regexp.Regexp) (string, error) {
 	if r, ok := m[f]; ok {
-		f = r
-	} else {
-		// protect against injections
-		if filterReg.MatchString(f) {
-			return "", fmt.Errorf("invalid characters in field name: %q", f)
-		}
-		f = lowerReg.ReplaceAllStringFunc(f, func(s string) string {
-			return "_" + strings.ToLower(s)
-		})
+		return r, nil
 	}
-	return f, nil
+	if !allowed.MatchString(f) {
+		return "", fmt.Errorf("invalid characters in field name: %q", f)
+	}
+	return lowerReg.ReplaceAllStringFunc(f, func(s string) string {
+		return "_" + strings.ToLower(s)
+	}), nil
 }
 
 func sanitizeOrder(item string, m map[string]string) (string, error) {

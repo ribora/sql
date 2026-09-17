@@ -50,7 +50,7 @@ func filter(field any, m map[string]string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("unsupported type for field '%s'", field)
 	}
-	return sanitize(f, m)
+	return sanitizeProjection(f, m)
 }
 
 func filterAll(fields []string, m map[string]string) ([]string, error) {
