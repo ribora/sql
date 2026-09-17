@@ -8,7 +8,6 @@ import (
 	"context"
 	dbSql "database/sql"
 	"errors"
-	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -301,6 +300,8 @@ func recordDb(ctx context.Context, duration hilton.Histogram, system, op string,
 	duration.Record(ctx, took, attrs...)
 }
 
+const otherErrorType = "_OTHER"
+
 func errorType(err error) string {
 	if err == nil {
 		return ""
@@ -324,5 +325,5 @@ func errorType(err error) string {
 		errors.Is(err, ErrCannotRollbackTransaction):
 		return "tx"
 	}
-	return fmt.Sprintf("%T", err)
+	return otherErrorType
 }
