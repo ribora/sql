@@ -14,10 +14,6 @@ var (
 	lowerReg  = regexp.MustCompile(`([A-Z])`)
 )
 
-type Valueable interface {
-	values() []any
-}
-
 func newExpressionBuilder(e criteria.Expression, builder Driver, cfg *builderCfg) *exprBuilder {
 	return &exprBuilder{driver: builder, e: e, cfg: cfg}
 }
@@ -37,83 +33,58 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 	if e.driver == nil {
 		return "", ErrExprBuilderNotImplemented
 	}
-	expression, ok := e.e.(criteria.Builder)
-	if !ok {
-		return "", fmt.Errorf("need a criteria here")
-	}
-	strategy, err := expression.Strategy()
-	if err != nil {
-		return "", err
-	}
-	parts, err := expression.Params()
+	strategy, nodes, err := criteria.Unpack(e.e)
 	if err != nil {
 		return "", err
 	}
 
 	var query []string
-	var q string
-	for _, part := range parts {
-		if v, ok := part.(Valueable); ok {
-			part = v.values()
-		}
-		if ex, ok := part.(criteria.Expression); ok {
-			q, err = newExpressionBuilder(ex, e.driver, e.cfg).build(params)
+	for _, node := range nodes {
+		var q string
+		if node.Nested != nil {
+			q, err = newExpressionBuilder(node.Nested, e.driver, e.cfg).build(params)
 			if err != nil {
 				return "", err
 			}
 			if q != "" {
 				query = append(query, q)
 			}
-		} else {
-			v := part.([]any)
-			field := v[0]
-			operation := v[1].(string)
-			value := v[2]
+			continue
+		}
 
-			if f, ok := field.(string); ok {
-				field, err = sanitize(f, e.cfg.mappings)
-				if err != nil {
-					return "", err
-				}
-			} else {
-				return "", fmt.Errorf("unsupported type for field '%s'", field)
-			}
+		var field string
+		field, err = sanitize(node.Condition.Field, e.cfg.mappings)
+		if err != nil {
+			return "", err
+		}
 
-			if s, ok := value.(builder); ok {
-				sub, err := s.build(e.driver, e.cfg, params)
-				if err != nil {
-					return "", err
-				}
-				q, params, err = e.driver.Field(field.(string), operation, driver.Raw(sub), params)
-				if err != nil {
-					return "", err
-				}
-			} else if r, ok := value.(Field); ok {
-				var m string
-				m, err = sanitize(string(r), e.cfg.mappings)
-				if err != nil {
-					return "", err
-				}
-				q, params, err = e.driver.Field(field.(string), operation, driver.Raw(m), params)
-			} else {
-				q, params, err = e.driver.Field(field.(string), operation, value, params)
-			}
-
+		switch value := node.Condition.Value.(type) {
+		case builder:
+			var sub string
+			sub, err = value.build(e.driver, e.cfg, params)
 			if err != nil {
 				return "", err
 			}
-			if q != "" {
-				query = append(query, q)
+			q, params, err = e.driver.Field(field, node.Condition.Operation, driver.Raw(sub), params)
+		case Field:
+			var m string
+			m, err = sanitize(string(value), e.cfg.mappings)
+			if err != nil {
+				return "", err
 			}
+			q, params, err = e.driver.Field(field, node.Condition.Operation, driver.Raw(m), params)
+		default:
+			q, params, err = e.driver.Field(field, node.Condition.Operation, value, params)
+		}
+
+		if err != nil {
+			return "", err
+		}
+		if q != "" {
+			query = append(query, q)
 		}
 	}
 
-	if strategy == "" {
-		strategy = criteria.StrategyAnd
-	}
-	if strategy != criteria.StrategyAnd && strategy != criteria.StrategyOr {
-		return "", fmt.Errorf("%w: '%s'", ErrUnsupportedQueryMode, strategy)
-	}
 	if len(query) == 0 {
 		return "", nil
 	}
