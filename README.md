@@ -229,6 +229,21 @@ func (m *storedUser) UpdatesIdentity() map[string]any {
 
 Use these when you need a custom mapping implementation.
 
+With both of them the `_` field may name no model at all:
+
+```go
+type storedReading struct {
+    _ any `store:"nonew,nounwrap"`
+
+    At    time.Time `db:"at"`
+    Event string    `db:"event"`
+}
+```
+
+That is how a read model is written — projected by a query, never turned back
+into a domain type. Neither constructor is generated, so there is no model to
+check the fields against.
+
 ### Field Tags
 
 | Tag | Description |
@@ -239,6 +254,44 @@ Use these when you need a custom mapping implementation.
 | `store:",updates:Group1\|Group2"` | Included in the named update methods. Overrides `readonly`. |
 | `store:",inserts:Group1\|Group2"` | Included in the named insert methods. Overrides `readonly`. |
 | `store:",convert:csv"` | Maps a model `[]string` to a stored `*string` through `sql.JoinCsv` / `sql.SplitCsv`. Lossy: an element containing a comma comes back as two, and no elements is NULL. |
+| `store:"-"` | Not a column and not mapped: a cache, a computed value, a collection loaded by another query. |
+
+### Every Field Is Answered For
+
+The generator type-checks the package, so a mapping that does not line up is
+reported against your tag rather than against the generated file:
+
+- A field with neither a `db` tag nor `store:"-"` stops the run. Silence used to
+  mean "not a column", and the column then went missing from `Scan()` and
+  `Inserts()` with nothing to read about it.
+- `store:"Foo"` naming a field the model does not have stops the run.
+- A stored field whose type does not match the model field's stops the run.
+
+A model field with nothing on the stored struct to carry it would be left zero by
+`Unwrap()`, so the generator **writes it into the struct**, without tags, and
+stops. Name its column, or decline it with `store:"-"`:
+
+```go
+type storedUser struct {
+    _ *model.User
+
+    Id    int    `db:"id"`
+    Email string `db:"email"`
+
+    // Written in by the generator; the answer below is the author's.
+    Sessions []*model.Session `store:"-"`
+}
+```
+
+The answer is recorded on the field, next to the type it belongs to, and it
+cannot go stale: rename the model field and the mapping moves with it.
+
+### The Build Guard
+
+Generated files carry `//go:build !store`, and the generator loads packages with
+`-tags store`. Its own output is therefore invisible to it, so a stale or broken
+`_gen.go` cannot block the run that replaces it — including output written before
+the guard existed, which is recognised by its header line and regenerated.
 
 ---
 
