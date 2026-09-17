@@ -16,7 +16,9 @@ type StoredUser struct {
 	Email    string `db:"email"`
 	FullName string `db:"full_name" store:"Name"`
 
-	// Neither of these is a column: one opts out, the other has no db tag.
-	Internal string `db:"internal" store:"-"`
-	Scratch  string
+	// Declined, db tag or not: a model field this struct does not carry, a column
+	// it opts out of, and one the model knows nothing about.
+	Notes    []string `store:"-"`
+	Internal string   `db:"internal" store:"-"`
+	Scratch  string   `store:"-"`
 }

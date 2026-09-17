@@ -29,6 +29,7 @@ var successCases = []string{
 	"json_wrapper",
 	"csv_with_json",
 	"wrapping_pkg",
+	"no_model",
 }
 
 var errorCases = []struct {
@@ -38,6 +39,12 @@ var errorCases = []struct {
 	{"err_embedded_tag", "an embedded field cannot carry a db tag"},
 	{"err_shared_tag", "would map to one column"},
 	{"err_bad_model", "must name the model type"},
+	{"err_untyped_model", "must name the model type"},
+	{"err_unknown_model_field", "the model has no field Title"},
+	{"err_type_mismatch", "the field is string and model field Count is int"},
+	{"err_untagged_field", "a field needs a db tag"},
+	{"unmapped_field", "StoredDoc.Lines"},
+	{"err_broken_model", "the type does not resolve"},
 }
 
 func TestGoldens(t *testing.T) {

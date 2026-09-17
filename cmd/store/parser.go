@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"regexp"
+	"go/types"
+	"path/filepath"
+	"reflect"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 const (
@@ -14,11 +15,6 @@ const (
 	sqlWrapper = "c87d7b66130cd9245a1d3f5dde49683a"
 	// A csv field needs it even when the source file imports no sql package.
 	defaultSqlImport = `"gitlab.com/gorib/sql"`
-)
-
-var (
-	dbTagRE    = regexp.MustCompile(`db:"([^"]*)"`)
-	storeTagRE = regexp.MustCompile(`store:"([^"]*)"`)
 )
 
 type Lexem struct {
@@ -75,72 +71,39 @@ type LexemField struct {
 	InsertGroups []string
 }
 
-func parse(fileName string) (string, []*Lexem, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, fileName, nil, parser.ParseComments)
-	if err != nil {
-		return "", nil, err
-	}
-
-	imports := newImportSet(fileName, f)
-
-	var structs []*Lexem
-	for _, decl := range f.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.TYPE {
-			continue
-		}
-		// A grouped `type (...)` block used to generate the first and drop the rest.
-		for _, spec := range gen.Specs {
-			typeSpec, ok := spec.(*ast.TypeSpec)
-			if !ok {
-				continue
-			}
-			// `type Status int` in the same file is legitimate; asserting here crashed.
-			structSpec, ok := typeSpec.Type.(*ast.StructType)
-			if !ok {
-				continue
-			}
-			lexem, err := parseStruct(typeSpec.Name.Name, structSpec, imports)
-			if err != nil {
-				return "", nil, fmt.Errorf("%s: %w", fileName, err)
-			}
-			if lexem != nil {
-				structs = append(structs, lexem)
-			}
-		}
-	}
-
-	return f.Name.Name, structs, nil
+type MissingField struct {
+	Name string
+	Type types.Type
 }
 
-// `_` gets a pass of its own: in source order, a convert:csv field declared above
-// it dereferenced a nil lexem.
-func parseStruct(name string, st *ast.StructType, imports *importSet) (*Lexem, error) {
-	var lexem *Lexem
-	for _, field := range st.Fields.List {
-		if len(field.Names) != 1 || field.Names[0].Name != "_" {
-			continue
-		}
-		var err error
-		if lexem, err = modelLexem(name, field, imports); err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		break
-	}
-	// No `_` field: not a stored struct, nothing to generate.
-	if lexem == nil {
-		return nil, nil
-	}
-
-	for _, field := range st.Fields.List {
-		f, err := parseField(field, lexem, imports)
+// The package is loaded once per directory, by the caller.
+func parse(pkg *packages.Package, fileName string) (string, []*Lexem, error) {
+	var lexems []*Lexem
+	for _, st := range storedTypesIn(pkg, fileName) {
+		lexem, err := describe(pkg, st)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
+			return "", nil, fmt.Errorf("%s: %s: %w", fileName, st.name, err)
 		}
-		if f != nil {
-			lexem.Fields = append(lexem.Fields, f)
+		if lexem != nil {
+			lexems = append(lexems, lexem)
 		}
+	}
+	return pkg.Name, lexems, nil
+}
+
+const modelHint = "the _ field must name the model type, as in `_ *model.User`"
+
+func describe(pkg *packages.Package, st storedType) (*Lexem, error) {
+	lexem, model, err := modelLexem(pkg, st)
+	if err != nil || lexem == nil {
+		return nil, err
+	}
+	if lexem.NoNew && lexem.NoUnwrap {
+		// No model field is ever read, so nothing lines up against one.
+		model = nil
+	}
+	if err := collectFields(pkg, st, lexem, model); err != nil {
+		return nil, err
 	}
 	if lexem.sqlPath != "" {
 		lexem.addImport(sqlWrapper + " " + lexem.sqlPath)
@@ -148,167 +111,298 @@ func parseStruct(name string, st *ast.StructType, imports *importSet) (*Lexem, e
 	return lexem, nil
 }
 
-const modelHint = "the _ field must name the model type, as in `_ *model.User`"
-
-func modelLexem(name string, field *ast.Field, imports *importSet) (*Lexem, error) {
-	typ := field.Type
-	pointer := ""
-	if star, ok := typ.(*ast.StarExpr); ok {
-		pointer = "*"
-		typ = star.X
-	}
-
-	var module, model string
-	switch x := typ.(type) {
-	case *ast.SelectorExpr:
-		ident, ok := x.X.(*ast.Ident)
-		if !ok {
-			return nil, fmt.Errorf("%s", modelHint)
-		}
-		module, model = ident.Name, x.Sel.Name
-	case *ast.Ident:
-		model = x.Name
-	default:
-		return nil, fmt.Errorf("%s", modelHint)
-	}
-
-	lexem := &Lexem{Name: name, Model: model, Pointer: pointer}
-	if field.Tag != nil {
-		for _, part := range storeTagParts(field.Tag.Value) {
-			switch part {
-			case "nonew":
-				lexem.NoNew = true
-			case "nounwrap":
-				lexem.NoUnwrap = true
-			}
+// A nil lexem and a nil error: no `_` field, so not a stored struct.
+func modelLexem(pkg *packages.Package, st storedType) (*Lexem, *types.Struct, error) {
+	var marker *types.Var
+	var tag string
+	for i := range st.st.NumFields() {
+		if f := st.st.Field(i); f.Name() == "_" {
+			marker, tag = f, st.st.Tag(i)
+			break
 		}
 	}
-	if module != "" {
-		path, err := imports.path(module)
-		if err != nil {
-			return nil, err
-		}
-		lexem.Module = module
-		lexem.addImport(module + " " + path)
-	}
-	return lexem, nil
-}
-
-// A nil field is one this struct does not store: no db tag, or store:"-".
-func parseField(field *ast.Field, lexem *Lexem, imports *importSet) (*LexemField, error) {
-	if field.Tag == nil || field.Tag.Value == "" {
-		return nil, nil
-	}
-	db := dbTagRE.FindStringSubmatch(field.Tag.Value)
-	store := storeTagRE.FindStringSubmatch(field.Tag.Value)
-	if len(db) != 2 || len(store) == 2 && store[1] == "-" {
-		return nil, nil
-	}
-	switch {
-	case len(field.Names) == 0:
-		return nil, fmt.Errorf("an embedded field cannot carry a db tag: name the field, or drop the tag")
-	case len(field.Names) > 1:
-		return nil, fmt.Errorf("%s: fields sharing one db tag would map to one column: give each its own tag",
-			strings.Join(names(field), ", "))
-	case field.Names[0].Name == "_":
-		return nil, nil
+	if marker == nil {
+		return nil, nil, nil
 	}
 
-	name := field.Names[0].Name
-	source := name
-	var convert string
-	var readonly bool
-	var updateGroups, insertGroups []string
-
-	if len(store) == 2 {
-		parts := strings.Split(store[1], ",")
-		if parts[0] != "" {
-			source = parts[0]
-		}
-		for _, part := range parts {
-			if part == "readonly" {
-				readonly = true
-			}
-			converts := strings.Split(part, ":")
-			if len(converts) != 2 {
-				continue
-			}
-			switch converts[0] {
-			case "convert":
-				convert = converts[1]
-				if convert == "csv" && lexem.sqlPath == "" {
-					lexem.sqlPath = defaultSqlImport
-				}
-			case "updates":
-				updateGroups = strings.Split(converts[1], "|")
-				for _, g := range updateGroups {
-					lexem.addUpdateGroup(g)
-				}
-			case "inserts":
-				insertGroups = strings.Split(converts[1], "|")
-				for _, g := range insertGroups {
-					lexem.addInsertGroup(g)
-				}
-			}
+	lexem := &Lexem{Name: st.name}
+	for _, part := range strings.Split(reflect.StructTag(tag).Get("store"), ",") {
+		switch part {
+		case "nonew":
+			lexem.NoNew = true
+		case "nounwrap":
+			lexem.NoUnwrap = true
 		}
 	}
 
-	wrapped, err := jsonWrapped(field, lexem, imports)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+	typ := marker.Type()
+	if ptr, ok := typ.(*types.Pointer); ok {
+		lexem.Pointer = "*"
+		typ = ptr.Elem()
 	}
-
-	return &LexemField{
-		Name:         name,
-		Source:       source,
-		Field:        strings.Split(db[1], ",")[0],
-		Readonly:     readonly,
-		Wrapped:      wrapped,
-		Convert:      convert,
-		UpdateGroups: updateGroups,
-		InsertGroups: insertGroups,
-	}, nil
-}
-
-func jsonWrapped(field *ast.Field, lexem *Lexem, imports *importSet) (bool, error) {
-	star, ok := field.Type.(*ast.StarExpr)
+	named, ok := typ.(*types.Named)
 	if !ok {
-		return false, nil
+		return lexem, nil, untypedModel(lexem)
 	}
-	idx, ok := star.X.(*ast.IndexExpr)
+	model, ok := named.Underlying().(*types.Struct)
 	if !ok {
-		return false, nil
+		return lexem, nil, untypedModel(lexem)
 	}
-	sel, ok := idx.X.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "Json" {
-		return false, nil
+
+	lexem.Model = named.Obj().Name()
+	if modelPkg := named.Obj().Pkg(); modelPkg != nil && modelPkg.Path() != pkg.PkgPath {
+		lexem.Module = modelPkg.Name()
+		lexem.addImport(modelPkg.Name() + " " + `"` + modelPkg.Path() + `"`)
 	}
-	qualifier, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return false, fmt.Errorf("the Json wrapper has to be qualified by a package name")
-	}
-	path, err := imports.path(qualifier.Name)
-	if err != nil {
-		return false, err
-	}
-	// Wins over a csv field's default, and the struct gets one sql import — so a
-	// package that provides Json has to provide JoinCsv and SplitCsv too.
-	lexem.sqlPath = path
-	return true, nil
+	return lexem, model, nil
 }
 
-func names(field *ast.Field) []string {
-	out := make([]string, len(field.Names))
-	for i, n := range field.Names {
-		out[i] = n.Name
-	}
-	return out
-}
-
-func storeTagParts(tag string) []string {
-	m := storeTagRE.FindStringSubmatch(tag)
-	if len(m) != 2 {
+// `_ any` is a read model. Without both flags the output would map fields off a
+// type that has none.
+func untypedModel(lexem *Lexem) error {
+	if lexem.NoNew && lexem.NoUnwrap {
 		return nil
 	}
-	return strings.Split(m[1], ",")
+	return fmt.Errorf("%s (or mark the struct `store:\"nonew,nounwrap\"`)", modelHint)
+}
+
+func collectFields(pkg *packages.Package, st storedType, lexem *Lexem, model *types.Struct) error {
+	columns := map[string]string{}
+	mapped := map[string]bool{}
+
+	for i := range st.st.NumFields() {
+		f := st.st.Field(i)
+		tag := reflect.StructTag(st.st.Tag(i))
+		if f.Name() == "_" {
+			continue
+		}
+
+		dbTag, hasDb := tag.Lookup("db")
+		storeParts := strings.Split(tag.Get("store"), ",")
+
+		if f.Embedded() {
+			if hasDb {
+				return fmt.Errorf("an embedded field cannot carry a db tag: name the field, or drop the tag")
+			}
+			continue
+		}
+		if storeParts[0] == "-" {
+			continue
+		}
+		if !hasDb {
+			return fmt.Errorf("%s: a field needs a db tag to become a column, or `store:\"-\"` to stay out of one", f.Name())
+		}
+
+		column := strings.Split(dbTag, ",")[0]
+		if other, seen := columns[column]; seen {
+			return fmt.Errorf("%s and %s: fields sharing one db tag would map to one column: give each its own tag",
+				other, f.Name())
+		}
+		columns[column] = f.Name()
+
+		field, err := describeField(pkg, f, storeParts, column, lexem, model)
+		if err != nil {
+			return fmt.Errorf("%s: %w", f.Name(), err)
+		}
+		mapped[field.Source] = true
+		lexem.Fields = append(lexem.Fields, field)
+	}
+	return nil
+}
+
+// Field faults are deliberately not raised here: synchronising runs before the
+// checks, so one pass names every missing field instead of the first fault.
+func plan(pkg *packages.Package, st storedType) ([]MissingField, error) {
+	lexem, model, err := modelLexem(pkg, st)
+	if err != nil || lexem == nil || model == nil {
+		return nil, err
+	}
+	if lexem.NoNew && lexem.NoUnwrap {
+		return nil, nil
+	}
+
+	mapped := map[string]bool{}
+	for i := range st.st.NumFields() {
+		f := st.st.Field(i)
+		if f.Name() == "_" || f.Embedded() {
+			continue
+		}
+		parts := strings.Split(reflect.StructTag(st.st.Tag(i)).Get("store"), ",")
+		if parts[0] == "-" {
+			// Answered for: counting it as mapped is what stops it being written in again.
+			mapped[f.Name()] = true
+			continue
+		}
+		if parts[0] != "" {
+			mapped[parts[0]] = true
+			continue
+		}
+		mapped[f.Name()] = true
+	}
+	return missingFields(pkg, model, mapped), nil
+}
+
+func describeField(pkg *packages.Package, f *types.Var, storeParts []string, column string,
+	lexem *Lexem, model *types.Struct) (*LexemField, error) {
+	field := &LexemField{Name: f.Name(), Source: f.Name(), Field: column}
+	if storeParts[0] != "" {
+		field.Source = storeParts[0]
+	}
+	for _, part := range storeParts {
+		if part == "readonly" {
+			field.Readonly = true
+		}
+		key, value, ok := strings.Cut(part, ":")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "convert":
+			field.Convert = value
+			if value == "csv" && lexem.sqlPath == "" {
+				lexem.sqlPath = defaultSqlImport
+			}
+		case "updates":
+			field.UpdateGroups = strings.Split(value, "|")
+			for _, g := range field.UpdateGroups {
+				lexem.addUpdateGroup(g)
+			}
+		case "inserts":
+			field.InsertGroups = strings.Split(value, "|")
+			for _, g := range field.InsertGroups {
+				lexem.addInsertGroup(g)
+			}
+		}
+	}
+
+	if wrapped, path := jsonWrapper(f.Type()); wrapped {
+		field.Wrapped = true
+		// Wins over a csv field's default, and the struct gets one sql import — so
+		// a package that provides Json has to provide JoinCsv and SplitCsv too.
+		lexem.sqlPath = `"` + path + `"`
+	}
+
+	if model == nil {
+		return field, nil
+	}
+	source := modelField(model, field.Source)
+	if source == nil {
+		return nil, fmt.Errorf("the model has no field %s", field.Source)
+	}
+	// Type errors are ignored wholesale at load; one reaching a mapped field is not.
+	if broken(f.Type()) || broken(source.Type()) {
+		return nil, fmt.Errorf("the type does not resolve: fix what the package reports first")
+	}
+	if err := checkType(f.Type(), source.Type(), field); err != nil {
+		return nil, err
+	}
+	return field, nil
+}
+
+func broken(t types.Type) bool {
+	basic, ok := types.Unalias(t).(*types.Basic)
+	return ok && basic.Kind() == types.Invalid
+}
+
+func checkType(stored, source types.Type, field *LexemField) error {
+	switch {
+	case field.Wrapped:
+		inner, ok := jsonPayload(stored)
+		if !ok {
+			return fmt.Errorf("the Json wrapper needs a type argument")
+		}
+		if !types.Identical(inner, source) {
+			return fmt.Errorf("the Json payload is %s and model field %s is %s",
+				inner, field.Source, source)
+		}
+	case field.Convert == "csv":
+		ptr, ok := stored.(*types.Pointer)
+		if !ok || ptr.Elem().String() != "string" {
+			return fmt.Errorf("convert:csv needs a *string field, and this one is %s", stored)
+		}
+		slice, ok := source.Underlying().(*types.Slice)
+		if !ok || slice.Elem().String() != "string" {
+			return fmt.Errorf("convert:csv needs a []string on the model, and %s is %s",
+				field.Source, source)
+		}
+	case !types.Identical(stored, source):
+		return fmt.Errorf("the field is %s and model field %s is %s", stored, field.Source, source)
+	}
+	return nil
+}
+
+// The alias is not resolved away: a project fronting sql with a package of its own
+// declares Json as one, and the import has to be the package the author named.
+func jsonWrapper(t types.Type) (bool, string) {
+	ptr, ok := t.(*types.Pointer)
+	if !ok {
+		return false, ""
+	}
+	obj := wrapperObj(ptr.Elem())
+	if obj == nil || obj.Name() != "Json" || obj.Pkg() == nil {
+		return false, ""
+	}
+	return true, obj.Pkg().Path()
+}
+
+func wrapperObj(t types.Type) *types.TypeName {
+	switch x := t.(type) {
+	case *types.Alias:
+		return x.Obj()
+	case *types.Named:
+		return x.Obj()
+	}
+	return nil
+}
+
+func jsonPayload(t types.Type) (types.Type, bool) {
+	ptr, ok := t.(*types.Pointer)
+	if !ok {
+		return nil, false
+	}
+	named, ok := types.Unalias(ptr.Elem()).(*types.Named)
+	if !ok || named.TypeArgs() == nil || named.TypeArgs().Len() != 1 {
+		return nil, false
+	}
+	return named.TypeArgs().At(0), true
+}
+
+func modelField(model *types.Struct, name string) *types.Var {
+	for i := range model.NumFields() {
+		if f := model.Field(i); f.Name() == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// An unreachable model field is no candidate: writing it in would not compile.
+func missingFields(pkg *packages.Package, model *types.Struct, mapped map[string]bool) []MissingField {
+	var missing []MissingField
+	for i := range model.NumFields() {
+		f := model.Field(i)
+		if mapped[f.Name()] || f.Embedded() {
+			continue
+		}
+		if !f.Exported() && f.Pkg() != nil && f.Pkg().Path() != pkg.PkgPath {
+			continue
+		}
+		missing = append(missing, MissingField{Name: f.Name(), Type: f.Type()})
+	}
+	return missing
+}
+
+func samePath(a, b string) bool {
+	return canonPath(a) == canonPath(b)
+}
+
+func canonPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
 }
