@@ -52,6 +52,40 @@ func TestErrorTypeIgnoresTheMessage(t *testing.T) {
 	}
 }
 
+func spanFor(t *testing.T, err error) *hilton.RecordedSpan {
+	t.Helper()
+
+	rec := hilton.Recorder()
+	_, span := rec.Tracer(instrumentationName).Start(context.Background(), "sql.queryRow")
+	recordSpanErr(span, err)
+
+	recorded := rec.Span("sql.queryRow")
+	if recorded == nil {
+		t.Fatal("no span")
+	}
+	return recorded
+}
+
+func TestNoRowsIsCountedButNotAFailure(t *testing.T) {
+	if got := errorType(dbSql.ErrNoRows); got != "no_rows" {
+		t.Errorf("error.type = %q, want no_rows", got)
+	}
+	span := spanFor(t, dbSql.ErrNoRows)
+	if span.Status == hilton.StatusError {
+		t.Error("the span was marked failed")
+	}
+	if len(span.Errors) != 0 {
+		t.Errorf("the span recorded %v", span.Errors)
+	}
+}
+
+func TestRealFailureStillMarksTheSpan(t *testing.T) {
+	span := spanFor(t, &pgconn.PgError{Code: "23505"})
+	if span.Status != hilton.StatusError {
+		t.Error("the span was not marked failed")
+	}
+}
+
 // A key present on every success is a key nobody can group by.
 func TestSuccessCarriesNoErrorType(t *testing.T) {
 	rec := hilton.Recorder()

@@ -285,6 +285,9 @@ func recordSpanErr(span hilton.Span, err error) {
 	if err == nil {
 		return
 	}
+	if errors.Is(NewError(err), ErrNoRows) {
+		return
+	}
 	span.RecordError(err)
 	span.SetStatus(hilton.StatusError, err.Error())
 }
