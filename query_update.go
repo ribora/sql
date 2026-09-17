@@ -140,7 +140,7 @@ func (q *updateQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		}
 	}
 
-	if len(returning) > 0 {
+	if len(returning) > 0 && d.Returning() {
 		sb.WriteString(" returning ")
 		sb.WriteString(strings.Join(returning, ","))
 	}

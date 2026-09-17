@@ -186,7 +186,7 @@ func (q *insertQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		sb.WriteString(d.Conflict(strings.Join(keys, ","), conflicts))
 	}
 
-	if len(returning) > 0 {
+	if len(returning) > 0 && d.Returning() {
 		sb.WriteString(" returning ")
 		sb.WriteString(strings.Join(returning, ","))
 	}

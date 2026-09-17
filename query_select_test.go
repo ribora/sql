@@ -81,3 +81,68 @@ func TestSelect_FieldsFallBackToMappedReturning(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, query, "select line_facility from t")
 }
+
+func TestPage_LimitPrecedesOffset(t *testing.T) {
+	for name, d := range map[string]Driver{
+		"postgres": driver.NewPostgres(),
+		"mysql":    driver.NewMysql(),
+		"sqlite":   driver.NewSqlite(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			query, _, err := Select("id").From(Table("t")).Page(2, 10).Build(d)
+			require.NoError(t, err)
+			assert.Contains(t, query, "limit 10 offset 20")
+		})
+	}
+}
+
+func TestPage_FirstPageHasNoOffset(t *testing.T) {
+	query, _, err := Select("id").From(Table("t")).Page(0, 10).Build(driver.NewPostgres())
+	require.NoError(t, err)
+	assert.Contains(t, query, "limit 10")
+	assert.NotContains(t, query, "offset")
+}
+
+// A zero count zeroes both, so an offset without a limit cannot happen.
+func TestPage_ZeroCountPagesNothing(t *testing.T) {
+	query, _, err := Select("id").From(Table("t")).Page(3, 0).Build(driver.NewPostgres())
+	require.NoError(t, err)
+	assert.NotContains(t, query, "limit")
+	assert.NotContains(t, query, "offset")
+}
+
+func TestReturning_OmittedOnDriversWithoutIt(t *testing.T) {
+	cases := map[string]func(Driver) (string, []any, error){
+		"insert": func(d Driver) (string, []any, error) {
+			return Insert("name").Into(Table("t")).Values("ann").Returning("id", "name").Build(d)
+		},
+		"update": func(d Driver) (string, []any, error) {
+			return Update(map[string]any{"name": "ann"}).Table(Table("t")).Returning("id", "name").Build(d)
+		},
+	}
+
+	for name, build := range cases {
+		t.Run(name+"/mysql", func(t *testing.T) {
+			query, _, err := build(driver.NewMysql())
+			require.NoError(t, err)
+			assert.NotContains(t, query, "returning")
+		})
+		t.Run(name+"/postgres", func(t *testing.T) {
+			query, _, err := build(driver.NewPostgres())
+			require.NoError(t, err)
+			assert.Contains(t, query, "returning id,name")
+		})
+		t.Run(name+"/sqlite", func(t *testing.T) {
+			query, _, err := build(driver.NewSqlite())
+			require.NoError(t, err)
+			assert.Contains(t, query, "returning id,name")
+		})
+	}
+}
+
+func TestReturning_StillShapesTheInsertFields(t *testing.T) {
+	query, _, err := Insert().Into(Table("t")).Values("ann").Returning("name").Build(driver.NewMysql())
+	require.NoError(t, err)
+	assert.Contains(t, query, "insert into t (name) values (?)")
+	assert.NotContains(t, query, "returning")
+}

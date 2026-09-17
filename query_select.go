@@ -180,13 +180,13 @@ func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 	sb.WriteString(" order by ")
 	sb.WriteString(strings.Join(sort, ","))
 
-	if q.offset != 0 {
-		sb.WriteString(" offset ")
-		sb.WriteString(strconv.Itoa(int(q.offset)))
-	}
 	if q.limit != 0 {
 		sb.WriteString(" limit ")
 		sb.WriteString(strconv.Itoa(int(q.limit)))
+	}
+	if q.offset != 0 {
+		sb.WriteString(" offset ")
+		sb.WriteString(strconv.Itoa(int(q.offset)))
 	}
 
 	return sb.String(), nil
