@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 )
 
 type Transactional interface {
@@ -72,9 +73,7 @@ func NewRepository[Model any, _ ScannableModel[Model]](connection Db, opts ...re
 		mappings: make(map[string]string),
 	}
 	if mm, ok := any(&m).(Mappable); ok {
-		for k, v := range mm.Mappings() {
-			config.mappings[k] = v
-		}
+		maps.Copy(config.mappings, mm.Mappings())
 	}
 	for _, opt := range opts {
 		if err := opt(config); err != nil {
@@ -94,121 +93,113 @@ func (r *repository[Model]) Begin(ctx context.Context) (context.Context, func() 
 	return NewContextWithTransaction(ctx, r.DB)
 }
 
+func (r *repository[Model]) inTransaction[T any](ctx context.Context, fn func(context.Context, Tx) (T, error)) (result T, err error) {
+	tx, err := TransactionFromContext(ctx)
+	if err == nil {
+		return fn(ctx, tx)
+	}
+	if !errors.Is(err, ErrNoTransactionInContext) {
+		return result, err
+	}
+
+	var commit, rollback func() error
+	ctx, commit, rollback, err = r.Begin(ctx)
+	if err != nil {
+		return result, err
+	}
+	defer func() {
+		if err == nil {
+			err = commit()
+		}
+		// commit() marks the transaction done only when it succeeds, so this
+		// is what closes one whose commit failed.
+		if e := rollback(); err == nil {
+			err = e
+		}
+	}()
+
+	tx, err = TransactionFromContext(ctx)
+	if err != nil {
+		return result, err
+	}
+	return fn(ctx, tx)
+}
+
+func applyReturning[Model any](builder Builder, model *Model) {
+	returning := any(model).(Returnable).Returns()
+	if len(returning) == 0 {
+		returning = []string{"*"}
+	}
+	switch q := builder.(type) {
+	case insertable:
+		q.Returning(returning...)
+	case updatable:
+		q.Returning(returning...)
+	case selectable:
+		q.Returning(returning...)
+	}
+}
+
+func (r *repository[Model]) compile(builder Builder) (string, []any, error) {
+	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
+	if err != nil {
+		return q, args, fmt.Errorf("%w (%s, %v)", err, q, args)
+	}
+	args, err = values(args)
+	if err != nil {
+		return q, nil, err
+	}
+	return q, args, nil
+}
+
+func (r *repository[Model]) returnsRows(builder Builder) bool {
+	if r.DB.Driver().Returning() {
+		return true
+	}
+	switch builder.(type) {
+	case InsertQuery, UpdateQuery, DeleteQuery:
+		return false
+	}
+	return true
+}
+
 func (r *repository[Model]) Get(ctx context.Context, builder Builder) (_ *Model, err error) {
 	defer func() {
 		err = NewError(err)
 	}()
-	var model Model
-	var commit, rollback func() error
-	tx, err := TransactionFromContext(ctx)
-	if errors.Is(err, ErrNoTransactionInContext) {
-		ctx, commit, rollback, err = r.Begin(ctx)
+	return r.inTransaction(ctx, func(ctx context.Context, tx Tx) (*Model, error) {
+		var model Model
+		applyReturning(builder, &model)
+		q, args, err := r.compile(builder)
 		if err != nil {
-			return
+			return &model, err
 		}
-		defer func() {
-			if err == nil {
-				err = commit()
-			}
-			if e := rollback(); err == nil {
-				err = e
-			}
-		}()
-		tx, err = TransactionFromContext(ctx)
-		if err != nil {
-			return nil, err
+
+		if !r.returnsRows(builder) {
+			_, err = tx.Exec(ctx, q, args...)
+			return &model, err
 		}
-	}
-
-	ret := any(&model).(Returnable)
-	returning := ret.Returns()
-	if len(returning) == 0 {
-		returning = []string{"*"}
-	}
-	if ret, ok := builder.(insertable); ok {
-		ret.Returning(returning...)
-	} else if ret, ok := builder.(updatable); ok {
-		ret.Returning(returning...)
-	} else if ret, ok := builder.(selectable); ok {
-		ret.Returning(returning...)
-	}
-	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
-	if err != nil {
-		return &model, fmt.Errorf("%w (%s, %v)", err, q, args)
-	}
-	args, err = values(args)
-	if err != nil {
-		return &model, err
-	}
-
-	_, ok := builder.(InsertQuery)
-	if !ok {
-		_, ok = builder.(UpdateQuery)
-	}
-	if !r.DB.Driver().Returning() && ok {
-		_, err = tx.Exec(ctx, q, args...)
-	} else {
 		m := any(&model).(Scannable)
-		err = tx.QueryRow(ctx, q, args...).Scan(m.Scan()...)
-	}
-	return &model, err
+		return &model, tx.QueryRow(ctx, q, args...).Scan(m.Scan()...)
+	})
 }
 
-func (r *repository[Model]) Select(ctx context.Context, builder Builder) (models []*Model, err error) {
+func (r *repository[Model]) Select(ctx context.Context, builder Builder) (_ []*Model, err error) {
 	defer func() {
 		err = NewError(err)
 	}()
-	var commit, rollback func() error
-	tx, err := TransactionFromContext(ctx)
-	if errors.Is(err, ErrNoTransactionInContext) {
-		ctx, commit, rollback, err = r.Begin(ctx)
+	return r.inTransaction(ctx, func(ctx context.Context, tx Tx) (models []*Model, err error) {
+		applyReturning(builder, new(Model))
+		q, args, err := r.compile(builder)
 		if err != nil {
 			return nil, err
 		}
-		defer func() {
-			if err == nil {
-				err = commit()
-			}
-			if e := rollback(); err == nil {
-				err = e
-			}
-		}()
-		tx, err = TransactionFromContext(ctx)
-		if err != nil {
+
+		if !r.returnsRows(builder) {
+			_, err = tx.Exec(ctx, q, args...)
 			return nil, err
 		}
-	}
-
-	returning := any(new(Model)).(Returnable).Returns()
-	if len(returning) == 0 {
-		returning = []string{"*"}
-	}
-	if ret, ok := builder.(insertable); ok {
-		ret.Returning(returning...)
-	} else if ret, ok := builder.(updatable); ok {
-		ret.Returning(returning...)
-	} else if ret, ok := builder.(selectable); ok {
-		ret.Returning(returning...)
-	}
-	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
-	if err != nil {
-		return nil, fmt.Errorf("%w (%s, %v)", err, q, args)
-	}
-	args, err = values(args)
-	if err != nil {
-		return nil, err
-	}
-
-	_, ok := builder.(InsertQuery)
-	if !ok {
-		_, ok = builder.(UpdateQuery)
-	}
-	if !r.DB.Driver().Returning() && ok {
-		_, err = tx.Exec(ctx, q, args...)
-		return nil, err
-	} else {
-		var rows Rows
-		rows, err = tx.Query(ctx, q, args...)
+		rows, err := tx.Query(ctx, q, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -216,95 +207,48 @@ func (r *repository[Model]) Select(ctx context.Context, builder Builder) (models
 		for rows.Next() {
 			var model Model
 			m := any(&model).(Scannable)
-			err = rows.Scan(m.Scan()...)
-			if err != nil {
+			if err := rows.Scan(m.Scan()...); err != nil {
 				return nil, err
 			}
 			models = append(models, &model)
 		}
-	}
-	return
+		return models, nil
+	})
 }
 
 func (r *repository[Model]) Delete(ctx context.Context, builder DeleteBuilder) (err error) {
 	defer func() {
 		err = NewError(err)
 	}()
-	var commit, rollback func() error
-	tx, err := TransactionFromContext(ctx)
-	if errors.Is(err, ErrNoTransactionInContext) {
-		ctx, commit, rollback, err = r.Begin(ctx)
+	_, err = r.inTransaction(ctx, func(ctx context.Context, tx Tx) (any, error) {
+		q, args, err := r.compile(builder)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		defer func() {
-			if err == nil {
-				err = commit()
-			}
-			if e := rollback(); err == nil {
-				err = e
-			}
-		}()
-		tx, err = TransactionFromContext(ctx)
-		if err != nil {
-			return err
-		}
-	}
 
-	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
-	if err != nil {
-		return err
-	}
-	args, err = values(args)
-	if err != nil {
-		return err
-	}
-
-	_, err = tx.Exec(ctx, q, args...)
+		_, err = tx.Exec(ctx, q, args...)
+		return nil, err
+	})
 	return err
 }
 
-func (r *repository[Model]) Count(ctx context.Context, builder CountBuilder) (total int, err error) {
+func (r *repository[Model]) Count(ctx context.Context, builder CountBuilder) (_ int, err error) {
 	defer func() {
 		err = NewError(err)
 	}()
-	var commit, rollback func() error
-	tx, err := TransactionFromContext(ctx)
-	if errors.Is(err, ErrNoTransactionInContext) {
-		ctx, commit, rollback, err = r.Begin(ctx)
+	return r.inTransaction(ctx, func(ctx context.Context, tx Tx) (int, error) {
+		q, args, err := r.compile(builder)
 		if err != nil {
 			return 0, err
 		}
-		defer func() {
-			if err == nil {
-				err = commit()
+
+		var total int
+		if err := tx.QueryRow(ctx, q, args...).Scan(&total); err != nil {
+			if e, ok := FromError(NewError(err)); ok && e.Is(ErrNoRows) {
+				return 0, nil
 			}
-			if e := rollback(); err == nil {
-				err = e
-			}
-		}()
-		tx, err = TransactionFromContext(ctx)
-		if err != nil {
 			return 0, err
 		}
-	}
-
-	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
-	if err != nil {
-		return 0, err
-	}
-	args, err = values(args)
-	if err != nil {
-		return 0, err
-	}
-
-	err = tx.QueryRow(ctx, q, args...).Scan(&total)
-	if err != nil {
-		if e, ok := FromError(NewError(err)); ok && e.Is(ErrNoRows) {
-			return 0, nil
-		}
-		return 0, err
-	}
-
-	return
+		return total, nil
+	})
 }
