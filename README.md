@@ -328,13 +328,19 @@ without the caller doing anything.
 |---|---|---|
 | `db.system.name` | span and metric | `postgresql`, `mysql`, `sqlite` |
 | `db.operation.name` | span and metric | `begin`, `query`, `queryRow`, `exec`, `commit`, `rollback` |
-| `error.type` | metric, on failure | `conflict`, `deadlock`, `no_rows`, `bad_request`, `internal`, `connect`, `tx` |
+| `error.type` | metric, on failure | `conflict`, `deadlock`, `no_rows`, `bad_request`, `internal`, `connect`, `tx`, `_OTHER` |
 | `db.query.text` | **span only** | the statement |
 
 The split in that last row is the point: operation names are a closed set and
 make a safe metric label, a query string is not. `error.type` comes from the
 same classification as `sql.NewError`, so a metric and a handled error agree on
-what went wrong.
+what went wrong; anything the classification does not recognise is `_OTHER`
+rather than a Go type, which would say nothing and change with the wrapping.
+
+A lookup that matched nothing is counted but not failed: `ErrNoRows` reports
+`error.type=no_rows` on the histogram, while the span is left unmarked, because
+"the row is not there" is usually the question being asked. `gorib/redis`
+treats a cache miss the same way and reports the same value.
 
 Durations are in seconds with explicit second-scale buckets — the SDK default is
 millisecond-scaled and would put every query in one bucket.
