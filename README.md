@@ -293,6 +293,19 @@ Generated files carry `//go:build !store`, and the generator loads packages with
 `_gen.go` cannot block the run that replaces it — including output written before
 the guard existed, which is recognised by its header line and regenerated.
 
+Loading a package runs `go list`, so the module has to resolve: dependencies
+present, `go.mod` in order. Reading the file with `go/ast` alone needed neither.
+
+### The First Run After Upgrading
+
+A package whose model carries fields the stored struct never did will have those
+fields written in, and the run will stop asking for their tags. That is the
+generator reporting a mapping that was already incomplete, not a new
+requirement — until now those fields were silently zero after `Unwrap()`.
+
+Answer each one and the next run is green. Nothing has to be undone: a run that
+stopped wrote no `_gen.go`.
+
 ---
 
 ## 4. Repository: CRUD Automation
