@@ -381,7 +381,7 @@ without the caller doing anything.
 |---|---|---|
 | `db.system.name` | span and metric | `postgresql`, `mysql`, `sqlite` |
 | `db.operation.name` | span and metric | `begin`, `query`, `queryRow`, `exec`, `commit`, `rollback` |
-| `error.type` | metric, on failure | `conflict`, `deadlock`, `no_rows`, `bad_request`, `internal`, `connect`, `tx`, `_OTHER` |
+| `error.type` | metric, when the operation did not succeed | `conflict`, `deadlock`, `no_rows`, `bad_request`, `internal`, `connect`, `tx`, `_OTHER` |
 | `db.query.text` | **span only** | the statement |
 
 The split in that last row is the point: operation names are a closed set and
