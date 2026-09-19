@@ -352,21 +352,34 @@ func (r *userRepo) Create(ctx context.Context, user *model.User) (*model.User, e
 
 ## 5. Transactions and Savepoints
 
-Transactions are propagated via `context.Context`. Nested `Begin` calls automatically create `SAVEPOINT`s.
+Transactions are propagated via `context.Context`. A nested one takes a `SAVEPOINT` rather than a second connection, so a repository call inside another transaction joins it.
+
+`InTransaction` commits on success, rolls back on failure, and rolls back a commit that failed — `Commit` marks the transaction done only when it succeeds, so without that last one the transaction stays open.
 
 ```go
-ctx, commit, rollback, err := repo.Begin(ctx)
-if err != nil {
-    return err
-}
-defer rollback()
-
-if err := repo.Save(ctx, user); err != nil {
-    return err
-}
-
-return commit()
+err := sql.InTransaction(ctx, db, func(ctx context.Context) error {
+    if err := invoices.Save(ctx, invoice); err != nil {
+        return err
+    }
+    return outbox.Enqueue(ctx, "invoice.paid", event)
+})
 ```
+
+It takes the connection rather than a repository: a transaction spans every repository it writes through, so making one of them its owner is arbitrary.
+
+In a service, inject `NewTransaction` instead — it has the one method, so the domain package never names `sql`:
+
+```go
+// domain/<x>/service — the interface belongs to the consumer
+type Transaction interface {
+    Run(ctx context.Context, do func(ctx context.Context) error) error
+}
+
+// config/di/di.go
+di.Wire[service.Transaction](sql.NewTransaction)
+```
+
+`repo.Begin(ctx)` still returns the four values for an adapter that needs them, and leaves the commit/rollback pair for you to get right.
 
 ---
 
