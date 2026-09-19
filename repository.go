@@ -107,16 +107,7 @@ func (r *repository[Model]) inTransaction[T any](ctx context.Context, fn func(co
 	if err != nil {
 		return result, err
 	}
-	defer func() {
-		if err == nil {
-			err = commit()
-		}
-		// commit() marks the transaction done only when it succeeds, so this
-		// is what closes one whose commit failed.
-		if e := rollback(); err == nil {
-			err = e
-		}
-	}()
+	defer func() { commitOrRollback(&err, commit, rollback) }()
 
 	tx, err = TransactionFromContext(ctx)
 	if err != nil {
