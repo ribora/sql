@@ -60,6 +60,52 @@ func TestInTransactionRollsBackAFailedCommit(t *testing.T) {
 	}
 }
 
+// A panic leaves the named error nil, so a defer that only reads it commits.
+func TestInTransactionRollsBackAPanic(t *testing.T) {
+	db := newFakeDb(driver.NewPostgres())
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("the panic did not reach the caller")
+			}
+		}()
+		_ = InTransaction(context.Background(), db, func(context.Context) error {
+			panic("boom")
+		})
+	}()
+
+	if got := db.calls.ops(); !slices.Equal(got, []string{"connect", "begin", "rollback"}) {
+		t.Errorf("calls = %v, want a rollback and no commit", got)
+	}
+}
+
+// The repository shares the deferred helper, so it regresses on its own.
+func TestRepositoryRollsBackAPanic(t *testing.T) {
+	db := newFakeDb(driver.NewPostgres())
+	repo, err := NewRepository[person, *person](db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("the panic did not reach the caller")
+			}
+		}()
+		_, _ = repo.Get(context.Background(), panicBuilder{})
+	}()
+
+	if got := db.calls.ops(); !slices.Equal(got, []string{"connect", "begin", "rollback"}) {
+		t.Errorf("calls = %v, want a rollback and no commit", got)
+	}
+}
+
+type panicBuilder struct{}
+
+func (panicBuilder) Build(Driver, ...BuildOption) (string, []any, error) { panic("boom") }
+
 func TestInTransactionWithoutATransaction(t *testing.T) {
 	db := newFakeDb(driver.NewPostgres())
 	db.beginErr = errors.New("no")

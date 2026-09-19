@@ -107,7 +107,7 @@ func (r *repository[Model]) inTransaction[T any](ctx context.Context, fn func(co
 	if err != nil {
 		return result, err
 	}
-	defer func() { commitOrRollback(&err, commit, rollback) }()
+	defer commitOrRollback(&err, commit, rollback)
 
 	tx, err = TransactionFromContext(ctx)
 	if err != nil {

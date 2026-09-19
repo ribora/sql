@@ -77,11 +77,17 @@ func InTransaction(ctx context.Context, db Db, do func(ctx context.Context) erro
 	if err != nil {
 		return err
 	}
-	defer func() { commitOrRollback(&err, commit, rollback) }()
+	defer commitOrRollback(&err, commit, rollback)
 	return do(ctx)
 }
 
+// Deferred directly, never wrapped: recover only answers the function the defer
+// names, and a panic leaves err nil, which reads as success.
 func commitOrRollback(err *error, commit, rollback func() error) {
+	if p := recover(); p != nil {
+		_ = rollback()
+		panic(p)
+	}
 	if *err == nil {
 		*err = commit()
 	}
