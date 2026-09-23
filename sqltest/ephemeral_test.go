@@ -58,6 +58,33 @@ func TestPersonalizeKeepsTheRestOfTheAddress(t *testing.T) {
 	assert.Contains(t, p.dsn, "user@host:5432")
 }
 
+func TestSuffixAppliesToANameFromTheDsn(t *testing.T) {
+	p := New(Dsn("postgres://host:5432/warehouse_test?sslmode=disable"), Database("ignored"), Suffix("order"))
+	require.NoError(t, p.resolve(t.Context()))
+
+	require.NoError(t, p.separate())
+	require.NoError(t, p.personalize())
+
+	name, err := p.databaseName()
+	require.NoError(t, err)
+	assert.Equal(t, "warehouse_test_order", name)
+}
+
+func TestSuffixIsPartOfTheSweptBase(t *testing.T) {
+	p := New(Dsn("postgres://host:5432/warehouse_test?sslmode=disable"), Suffix("order"), Ephemeral())
+	require.NoError(t, p.resolve(t.Context()))
+
+	require.NoError(t, p.separate())
+	require.NoError(t, p.separate())
+	require.NoError(t, p.personalize())
+
+	name, err := p.databaseName()
+	require.NoError(t, err)
+	assert.Equal(t, "warehouse_test_order_"+strconv.Itoa(os.Getpid()), name)
+	assert.Equal(t, "warehouse_test_order", p.base)
+	assert.False(t, sweepable(name, "warehouse_test"), "the unsuffixed run's sweep must not take it")
+}
+
 func TestSweepableRecognisesOnlyOurOwnNames(t *testing.T) {
 	for name, want := range map[string]bool{
 		"warehouse_test_1":       true,

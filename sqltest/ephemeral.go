@@ -22,6 +22,23 @@ func personalizedName(base string) string {
 	return base + "_" + strconv.Itoa(os.Getpid())
 }
 
+// Before personalize, so the suffix is part of the base the sweep matches on.
+func (p *Postgres) separate() error {
+	if p.suffix == "" || p.suffixed {
+		return nil
+	}
+	name, err := p.databaseName()
+	if err != nil {
+		return err
+	}
+	dsn, err := withDatabase(p.dsn, name+"_"+p.suffix)
+	if err != nil {
+		return err
+	}
+	p.dsn, p.suffixed = dsn, true
+	return nil
+}
+
 func (p *Postgres) personalize() error {
 	if !p.ephemeral || p.base != "" {
 		return nil

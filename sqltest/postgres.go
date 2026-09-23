@@ -57,6 +57,12 @@ func Ephemeral() Option {
 	return func(p *Postgres) { p.ephemeral = true }
 }
 
+// Appended to the name however it was given, DSN included — Database alone is
+// ignored there, and a second instance would land in the first one's database.
+func Suffix(suffix string) Option {
+	return func(p *Postgres) { p.suffix = suffix }
+}
+
 func New(opts ...Option) *Postgres {
 	// Not an option: this type speaks postgres and nothing else.
 	p := &Postgres{driver: "pgx"}
@@ -74,6 +80,8 @@ type Postgres struct {
 	tables    []string
 	database  string
 	ephemeral bool
+	suffix    string
+	suffixed  bool
 	container *container
 	// Not container != nil: with Env and Docker both set, CI resolves on the env
 	// branch and nothing is coming up to wait for.
@@ -95,6 +103,9 @@ func (p *Postgres) Provision(ctx context.Context) error {
 		return err
 	}
 	if err := p.await(ctx); err != nil {
+		return err
+	}
+	if err := p.separate(); err != nil {
 		return err
 	}
 	if err := p.personalize(); err != nil {
