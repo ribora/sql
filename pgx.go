@@ -4,6 +4,7 @@ import (
 	"context"
 	dbSql "database/sql"
 	"fmt"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,17 +22,28 @@ func newPgx(dsn string) Db {
 
 type pgxDb struct {
 	dsn    string
-	db     *pgxpool.Pool
 	driver Driver
+
+	dbOnce sync.Once
+	db     *pgxpool.Pool
+	dbErr  error
+
+	handleOnce sync.Once
+	handle     *dbSql.DB
+	handleErr  error
 }
 
 func (s *pgxDb) Connect(ctx context.Context) (Db, error) {
-	if s.db == nil {
+	s.dbOnce.Do(func() {
 		conn, err := pgxpool.New(ctx, s.dsn)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrCannotConnectDb, err)
+			s.dbErr = fmt.Errorf("%w: %v", ErrCannotConnectDb, err)
+			return
 		}
 		s.db = conn
+	})
+	if s.dbErr != nil {
+		return nil, s.dbErr
 	}
 	return s, nil
 }
@@ -49,8 +61,11 @@ func (s *pgxDb) Driver() Driver {
 }
 
 func (s *pgxDb) DbSql() (*dbSql.DB, error) {
-	stdlib.GetDefaultDriver()
-	return dbSql.Open("pgx", s.dsn)
+	s.handleOnce.Do(func() {
+		stdlib.GetDefaultDriver()
+		s.handle, s.handleErr = dbSql.Open("pgx", s.dsn)
+	})
+	return s.handle, s.handleErr
 }
 
 type pgxAdapter struct {

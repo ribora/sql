@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
 	"gitlab.com/gorib/sql/driver"
 )
@@ -12,6 +13,7 @@ func newSql(driverName, dsn string) (Db, error) {
 	var drv Driver
 	switch driverName {
 	case "sqlite3", "sqlite":
+		driverName = "sqlite"
 		drv = driver.NewSqlite()
 	case "mysql":
 		drv = driver.NewMysql()
@@ -29,16 +31,15 @@ type sqlDb struct {
 	dsn    string
 	driver string
 	drv    Driver
-	db     *sql.DB
+
+	once sync.Once
+	db   *sql.DB
+	err  error
 }
 
 func (s *sqlDb) Connect(_ context.Context) (Db, error) {
-	if s.db == nil || s.db.Ping() != nil {
-		conn, err := sql.Open(s.driver, s.dsn)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrCannotConnectDb, err)
-		}
-		s.db = conn
+	if _, err := s.DbSql(); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -56,7 +57,15 @@ func (s *sqlDb) Driver() Driver {
 }
 
 func (s *sqlDb) DbSql() (*sql.DB, error) {
-	return s.db, nil
+	s.once.Do(func() {
+		conn, err := sql.Open(s.driver, s.dsn)
+		if err != nil {
+			s.err = fmt.Errorf("%w: %v", ErrCannotConnectDb, err)
+			return
+		}
+		s.db = conn
+	})
+	return s.db, s.err
 }
 
 type sqlAdapter struct {
