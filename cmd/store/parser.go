@@ -28,6 +28,7 @@ type Lexem struct {
 	InsertGroups []string
 	NoNew        bool
 	NoUnwrap     bool
+	Sort         []string
 
 	// One path per struct: two aliases for the same package would not build.
 	sqlPath string
@@ -77,10 +78,13 @@ type MissingField struct {
 }
 
 // The package is loaded once per directory, by the caller.
-func parse(pkg *packages.Package, fileName string) (string, []*Lexem, error) {
+func parse(pkg *packages.Package, fileName string, strict bool) (string, []*Lexem, error) {
 	var lexems []*Lexem
 	for _, st := range storedTypesIn(pkg, fileName) {
 		lexem, err := describe(pkg, st)
+		if err == nil && strict && lexem != nil && len(lexem.Sort) == 0 {
+			err = fmt.Errorf("no default sort: name it on the _ field, as in `store:\"sort:id\"`")
+		}
 		if err != nil {
 			return "", nil, fmt.Errorf("%s: %s: %w", fileName, st.name, err)
 		}
@@ -133,6 +137,9 @@ func modelLexem(pkg *packages.Package, st storedType) (*Lexem, *types.Struct, er
 		case "nounwrap":
 			lexem.NoUnwrap = true
 		}
+		if sort, ok := strings.CutPrefix(part, "sort:"); ok {
+			lexem.Sort = strings.Split(sort, "|")
+		}
 	}
 
 	typ := marker.Type()
@@ -168,6 +175,7 @@ func untypedModel(lexem *Lexem) error {
 
 func collectFields(pkg *packages.Package, st storedType, lexem *Lexem, model *types.Struct) error {
 	columns := map[string]string{}
+	tagged := map[string]bool{}
 	mapped := map[string]bool{}
 
 	for i := range st.st.NumFields() {
@@ -185,6 +193,9 @@ func collectFields(pkg *packages.Package, st storedType, lexem *Lexem, model *ty
 				return fmt.Errorf("an embedded field cannot carry a db tag: name the field, or drop the tag")
 			}
 			continue
+		}
+		if hasDb {
+			tagged[strings.Split(dbTag, ",")[0]] = true
 		}
 		if storeParts[0] == "-" {
 			continue
@@ -206,6 +217,31 @@ func collectFields(pkg *packages.Package, st storedType, lexem *Lexem, model *ty
 		}
 		mapped[field.Source] = true
 		lexem.Fields = append(lexem.Fields, field)
+	}
+	return checkSort(lexem, tagged)
+}
+
+func checkSort(lexem *Lexem, columns map[string]bool) error {
+	seen := map[string]bool{}
+	for _, item := range lexem.Sort {
+		parts := strings.Fields(item)
+		if len(parts) == 0 {
+			return fmt.Errorf("sort: an empty item")
+		}
+		column, tail := parts[0], strings.Fields(strings.ToLower(strings.Join(parts[1:], " ")))
+		if !columns[column] {
+			return fmt.Errorf("sort %q: no field has that db tag", column)
+		}
+		if seen[column] {
+			return fmt.Errorf("sort %q: named twice", column)
+		}
+		seen[column] = true
+		if len(tail) > 0 && (tail[0] == "asc" || tail[0] == "desc") {
+			tail = tail[1:]
+		}
+		if len(tail) > 0 && (len(tail) != 2 || tail[0] != "nulls" || (tail[1] != "first" && tail[1] != "last")) {
+			return fmt.Errorf("sort %q: a column, then asc or desc, then nulls first or last", item)
+		}
 	}
 	return nil
 }

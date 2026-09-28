@@ -80,6 +80,16 @@ func (m *{{ .Lexem.Name }}) Mappings() map[string]string {
 	return {{ .Lexem.Name }}Mappings
 }
 
+{{ if .Lexem.Sort -}}
+func (m *{{ .Lexem.Name }}) DefaultSort() []string {
+	return []string{
+		{{- range .Lexem.Sort }}
+		"{{ . }}",
+		{{- end }}
+	}
+}
+{{- end }}
+
 func (m *{{ .Lexem.Name }}) Updates() map[string]any {
 	return map[string]any{
 		{{- range .Lexem.Fields }}

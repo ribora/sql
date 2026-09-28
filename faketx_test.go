@@ -10,8 +10,9 @@ import (
 // or a savepoint release fails, which a real database will not do on request.
 type fakeTx struct {
 	calls *calls
-	// op is exec, query, queryRow, scan, commit or rollback. scan is the
-	// error Query's rows produce rather than Query itself.
+	// op is exec, query, queryRow, scan, rows, commit or rollback. scan is the
+	// error Query's rows produce rather than Query itself; rows is the one the
+	// cursor reports after its last row, as a dropped connection does.
 	fail func(op, query string) error
 	row  []any
 	rows [][]any
@@ -39,7 +40,7 @@ func (t *fakeTx) Query(_ context.Context, query string, args ...any) (Rows, erro
 	if err := t.err("query", query); err != nil {
 		return nil, err
 	}
-	return &fakeRows{values: t.rows, err: t.err("scan", query)}, nil
+	return &fakeRows{values: t.rows, err: t.err("scan", query), cut: t.err("rows", query)}, nil
 }
 
 func (t *fakeTx) Commit(context.Context) error {
@@ -100,6 +101,7 @@ type fakeRows struct {
 	values [][]any
 	pos    int
 	err    error
+	cut    error
 }
 
 func (r *fakeRows) Next() bool {
@@ -116,7 +118,12 @@ func (r *fakeRows) Scan(dest ...any) error {
 
 func (r *fakeRows) Close() {}
 
-func (r *fakeRows) Err() error { return r.err }
+func (r *fakeRows) Err() error {
+	if r.cut != nil {
+		return r.cut
+	}
+	return r.err
+}
 
 func scanInto(dest []any, values []any) error {
 	for i, d := range dest {

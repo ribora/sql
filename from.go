@@ -5,13 +5,24 @@ type fromMain interface {
 	from() *from
 }
 
+type fromSource interface {
+	source() ([]*from, *View)
+}
+
+type fromTarget interface {
+	target() *from
+}
+
 type fromTable interface {
 	fromMain
+	fromSource
+	fromTarget
 	_table()
 }
 
 type fromQuery interface {
 	fromMain
+	fromSource
 	_query()
 }
 
@@ -31,35 +42,27 @@ func Query(q SelectQuery, alias string) fromQuery {
 }
 
 func LeftJoin(f fromMain, condition string) fromOptions {
-	return func() *from {
-		j := f.from()
-		j.condition = condition
-		j.join = "left join"
-		return j
-	}
+	return joined(f, "left join", condition)
 }
 
 func RightJoin(f fromMain, condition string) fromOptions {
-	return func() *from {
-		j := f.from()
-		j.condition = condition
-		j.join = "right join"
-		return j
-	}
+	return joined(f, "right join", condition)
 }
 
 func Join(f fromMain, condition string) fromOptions {
+	return joined(f, "join", condition)
+}
+
+func joined(f fromMain, kind string, condition string) fromOptions {
 	return func() *from {
-		j := f.from()
+		j := *f.from()
 		j.condition = condition
-		j.join = "join"
-		return j
+		j.join = kind
+		return &j
 	}
 }
 
 type from struct {
-	fromTable
-	fromQuery
 	table     string
 	query     SelectQuery
 	condition string
@@ -79,3 +82,17 @@ func (f *from) As(alias string) *from {
 func (f *from) from() *from {
 	return f
 }
+
+func (f *from) source() ([]*from, *View) {
+	c := *f
+	return []*from{&c}, nil
+}
+
+func (f *from) target() *from {
+	c := *f
+	return &c
+}
+
+func (f *from) _table() {}
+
+func (f *from) _query() {}

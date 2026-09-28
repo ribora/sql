@@ -198,7 +198,7 @@ func TestRepository_JoinsAtSavepointDepth(t *testing.T) {
 		"connect",
 		"begin",
 		"exec: savepoint level_1",
-		"exec: delete  from t",
+		"exec: delete from t",
 		"exec: release savepoint level_1",
 		"commit",
 	}, db.calls.trace())
@@ -221,7 +221,7 @@ func TestRepository_FailedSavepointReleaseIsRolledBack(t *testing.T) {
 		"connect",
 		"begin",
 		"exec: savepoint level_1",
-		"exec: delete  from t",
+		"exec: delete from t",
 		"exec: release savepoint level_1",
 		"exec: rollback to savepoint level_1",
 	}, db.calls.trace())
@@ -253,6 +253,18 @@ func TestSelect_RollsBackWhenARowFailsToScan(t *testing.T) {
 
 	models, err := repo.Select(context.Background(), Select().From(Table("t")))
 	require.ErrorIs(t, err, boom)
+	assert.Nil(t, models)
+	assert.Equal(t, []string{"connect", "begin", "query", "rollback"}, db.calls.ops())
+}
+
+func TestSelect_RollsBackWhenTheCursorBreaks(t *testing.T) {
+	dropped := errors.New("connection dropped")
+	repo, db := newFakeRepository(t, driver.NewPostgres())
+	db.tx.rows = [][]any{{1, "ann"}, {2, "bob"}}
+	db.tx.fail = failOp("rows", dropped)
+
+	models, err := repo.Select(context.Background(), Select().From(Table("t")))
+	require.ErrorIs(t, err, dropped)
 	assert.Nil(t, models)
 	assert.Equal(t, []string{"connect", "begin", "query", "rollback"}, db.calls.ops())
 }
@@ -375,17 +387,17 @@ func TestRepository_AsksForTheModelColumns(t *testing.T) {
 	}{
 		{"select", func() Builder {
 			return Select().From(Table("t"))
-		}, "select id, name from t order by id asc"},
+		}, "select id, name from t"},
 		{"insert", func() Builder {
 			return Insert("name").Into(Table("t")).Values("ann")
 		}, "insert into t (name) values ($1) returning id,name"},
 		{"update", func() Builder {
 			return Update(map[string]any{"name": "ann"}).Table(Table("t"))
-		}, "update t set name=$1  returning id,name"},
+		}, "update t set name=$1 returning id,name"},
 		// A builder with no Returning method of its own is left alone.
 		{"other", func() Builder {
 			return Count().From(Table("t"))
-		}, "select count(*) cnt from t order by cnt"},
+		}, "select count(*) cnt from t"},
 	}
 
 	for _, m := range readers() {
@@ -411,7 +423,7 @@ func TestRepository_FallsBackToEveryColumn(t *testing.T) {
 		_, err = repo.Get(ctx, Select().From(Table("t")))
 		require.NoError(t, err)
 		statement, _ := db.calls.first("queryRow")
-		assert.Equal(t, "select * from t order by id asc", statement.query)
+		assert.Equal(t, "select * from t", statement.query)
 	})
 
 	t.Run("Select", func(t *testing.T) {
@@ -422,7 +434,7 @@ func TestRepository_FallsBackToEveryColumn(t *testing.T) {
 		_, err = repo.Select(ctx, Select().From(Table("t")))
 		require.NoError(t, err)
 		statement, _ := db.calls.first("query")
-		assert.Equal(t, "select * from t order by id asc", statement.query)
+		assert.Equal(t, "select * from t", statement.query)
 	})
 }
 
@@ -454,7 +466,7 @@ func TestRepository_ExecutesWritesOnADriverWithoutReturning(t *testing.T) {
 		_, err := repo.Get(ctx, Update(map[string]any{"name": "ann"}).Table(Table("t")))
 		require.NoError(t, err)
 		statement, _ := db.calls.first("exec")
-		assert.Equal(t, "update t  set name=?", statement.query)
+		assert.Equal(t, "update t set name=?", statement.query)
 	})
 
 	t.Run("read", func(t *testing.T) {
@@ -597,3 +609,30 @@ func (m *mapped) Scan() []any { return []any{&m.ID} }
 func (m *mapped) Returns() []string { return nil }
 
 func (m *mapped) Mappings() map[string]string { return map[string]string{"own": "o.own"} }
+
+type sortedPerson struct{ person }
+
+func (p *sortedPerson) DefaultSort() []string { return []string{"name", "age desc nulls last"} }
+
+func TestRepository_ModelSortsByDefault(t *testing.T) {
+	ctx := context.Background()
+	db := newFakeDb(driver.NewPostgres())
+	repo, err := NewRepository[sortedPerson](db)
+	require.NoError(t, err)
+
+	_, err = repo.Select(ctx, Select().From(Table("t")))
+	require.NoError(t, err)
+	_, err = repo.Select(ctx, Select().From(Table("t")).Sort("id desc"))
+	require.NoError(t, err)
+
+	var queries []string
+	for _, e := range db.calls.entries {
+		if e.op == "query" {
+			queries = append(queries, e.query)
+		}
+	}
+	assert.Equal(t, []string{
+		"select id, name from t order by name,age desc nulls last",
+		"select id, name from t order by id desc",
+	}, queries)
+}

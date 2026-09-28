@@ -54,11 +54,22 @@ func TestSort_MalformedClauseRejected(t *testing.T) {
 	}
 }
 
-func TestSort_DefaultsToId(t *testing.T) {
-	q := Select().From(Table("t"))
+func TestSort_NoneByDefault(t *testing.T) {
+	query, _, err := Select().From(Table("t")).Build(driver.NewPostgres())
+	require.NoError(t, err)
+	assert.Equal(t, "select * from t", query)
+}
+
+func TestPage_NeedsAnOrder(t *testing.T) {
+	_, _, err := Select().From(Table("t")).Page(0, 20).Build(driver.NewPostgres())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "a page needs an order")
+
+	q := Select().From(Table("t")).Page(0, 20)
+	q.(*selectQuery).sortByDefault([]string{"code"})
 	query, _, err := q.Build(driver.NewPostgres())
 	require.NoError(t, err)
-	assert.Contains(t, query, "order by id asc")
+	assert.Equal(t, "select * from t order by code limit 20", query)
 }
 
 func TestGroupAndReturning_UseMappings(t *testing.T) {
@@ -89,7 +100,7 @@ func TestPage_LimitPrecedesOffset(t *testing.T) {
 		"sqlite":   driver.NewSqlite(),
 	} {
 		t.Run(name, func(t *testing.T) {
-			query, _, err := Select("id").From(Table("t")).Page(2, 10).Build(d)
+			query, _, err := Select("id").From(Table("t")).Sort("id").Page(2, 10).Build(d)
 			require.NoError(t, err)
 			assert.Contains(t, query, "limit 10 offset 20")
 		})
@@ -97,7 +108,7 @@ func TestPage_LimitPrecedesOffset(t *testing.T) {
 }
 
 func TestPage_FirstPageHasNoOffset(t *testing.T) {
-	query, _, err := Select("id").From(Table("t")).Page(0, 10).Build(driver.NewPostgres())
+	query, _, err := Select("id").From(Table("t")).Sort("id").Page(0, 10).Build(driver.NewPostgres())
 	require.NoError(t, err)
 	assert.Contains(t, query, "limit 10")
 	assert.NotContains(t, query, "offset")
@@ -105,7 +116,7 @@ func TestPage_FirstPageHasNoOffset(t *testing.T) {
 
 // A zero count zeroes both, so an offset without a limit cannot happen.
 func TestPage_ZeroCountPagesNothing(t *testing.T) {
-	query, _, err := Select("id").From(Table("t")).Page(3, 0).Build(driver.NewPostgres())
+	query, _, err := Select("id").From(Table("t")).Sort("id").Page(3, 0).Build(driver.NewPostgres())
 	require.NoError(t, err)
 	assert.NotContains(t, query, "limit")
 	assert.NotContains(t, query, "offset")

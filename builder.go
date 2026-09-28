@@ -2,6 +2,7 @@ package sql
 
 import (
 	"fmt"
+	"strings"
 )
 
 func newBuilderCfg(opts []BuildOption) (*builderCfg, error) {
@@ -63,4 +64,35 @@ func filterAll(fields []string, m map[string]string) ([]string, error) {
 		result = append(result, f)
 	}
 	return result, nil
+}
+
+type resolver struct {
+	mappings map[string]string
+	view     *View
+}
+
+func newResolver(cfg *builderCfg, view *View) *resolver {
+	return &resolver{mappings: cfg.mappings, view: view}
+}
+
+func (r *resolver) field(f string) (string, error) {
+	column, err := sanitize(f, r.mappings)
+	if err != nil || r.view == nil {
+		return column, err
+	}
+	if _, mapped := r.mappings[f]; !mapped && strings.Contains(f, ".") {
+		return "", fmt.Errorf("%q: a qualified name cannot reach past a view, declare it with Column", f)
+	}
+	return r.view.place(column), nil
+}
+
+func (r *resolver) projection(f string) (string, error) {
+	column, err := sanitizeProjection(f, r.mappings)
+	if err != nil || r.view == nil {
+		return column, err
+	}
+	if expr, ok := r.view.rule(column); ok {
+		return expr + " " + column, nil
+	}
+	return r.view.place(column), nil
 }

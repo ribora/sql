@@ -48,31 +48,31 @@ func TestSanitize_Injection(t *testing.T) {
 		{
 			name:  "plain name",
 			field: "code",
-			where: "select * from t where (code = $1) order by id asc",
+			where: "select * from t where (code = $1)",
 			order: "select * from t order by code limit 20",
-			proj:  "select code from t order by id asc",
+			proj:  "select code from t",
 		},
 		{
 			name:  "camelCase folded to snake_case",
 			field: "facilityCode",
-			where: "select * from t where (facility_code = $1) order by id asc",
+			where: "select * from t where (facility_code = $1)",
 			order: "select * from t order by facility_code limit 20",
-			proj:  "select facility_code from t order by id asc",
+			proj:  "select facility_code from t",
 		},
 		{
 			name:  "dotted name",
 			field: "u.name",
-			where: "select * from t where (u.name = $1) order by id asc",
+			where: "select * from t where (u.name = $1)",
 			order: "select * from t order by u.name limit 20",
-			proj:  "select u.name from t order by id asc",
+			proj:  "select u.name from t",
 		},
 		{
 			name:     "mapped name",
 			field:    "facilityCode",
 			mappings: map[string]string{"facilityCode": "f.code"},
-			where:    "select * from t where (f.code = $1) order by id asc",
+			where:    "select * from t where (f.code = $1)",
 			order:    "select * from t order by f.code limit 20",
-			proj:     "select f.code from t order by id asc",
+			proj:     "select f.code from t",
 		},
 		{
 			name:  "trailing comment, single token",
@@ -97,21 +97,20 @@ func TestSanitize_Injection(t *testing.T) {
 		{
 			name:  "star",
 			field: "*",
-			proj:  "select * from t order by id asc",
+			proj:  "select * from t",
 		},
 		{
 			name:  "qualified star",
 			field: "t.*",
-			proj:  "select t.* from t order by id asc",
+			proj:  "select t.* from t",
 		},
 		{
 			name:  "star glued to a name",
 			field: "id*",
 		},
 		{
-			name:  "empty name, dropped from sort rather than rejected",
+			name:  "empty name, dropped from sort and leaving the page without an order",
 			field: "",
-			order: "select * from t order by id asc limit 20",
 		},
 	}
 
@@ -142,7 +141,7 @@ func TestSanitize_Injection(t *testing.T) {
 func TestSanitize_MappedValueIsTrustedVerbatim(t *testing.T) {
 	query, err := injectWhere("sort", map[string]string{"sort": "id-- "})
 	require.NoError(t, err)
-	assert.Equal(t, "select * from t where (id--  = $1) order by id asc", query)
+	assert.Equal(t, "select * from t where (id--  = $1)", query)
 
 	_, err = injectWhere("id-- ", nil)
 	assert.Error(t, err)

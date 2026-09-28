@@ -15,8 +15,8 @@ var (
 	lowerReg      = regexp.MustCompile(`([A-Z])`)
 )
 
-func newExpressionBuilder(e criteria.Expression, builder Driver, cfg *builderCfg) *exprBuilder {
-	return &exprBuilder{driver: builder, e: e, cfg: cfg}
+func newExpressionBuilder(e criteria.Expression, builder Driver, cfg *builderCfg, names *resolver) *exprBuilder {
+	return &exprBuilder{driver: builder, e: e, cfg: cfg, names: names}
 }
 
 type Field string
@@ -25,6 +25,7 @@ type exprBuilder struct {
 	e      criteria.Expression
 	driver Driver
 	cfg    *builderCfg
+	names  *resolver
 }
 
 func (e *exprBuilder) build(params *[]any) (string, error) {
@@ -43,7 +44,7 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 	for _, node := range nodes {
 		var q string
 		if node.Nested != nil {
-			q, err = newExpressionBuilder(node.Nested, e.driver, e.cfg).build(params)
+			q, err = newExpressionBuilder(node.Nested, e.driver, e.cfg, e.names).build(params)
 			if err != nil {
 				return "", err
 			}
@@ -54,7 +55,7 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 		}
 
 		var field string
-		field, err = sanitize(node.Condition.Field, e.cfg.mappings)
+		field, err = e.names.field(node.Condition.Field)
 		if err != nil {
 			return "", err
 		}
@@ -69,7 +70,7 @@ func (e *exprBuilder) build(params *[]any) (string, error) {
 			q, params, err = e.driver.Field(field, node.Condition.Operation, driver.Raw(sub), params)
 		case Field:
 			var m string
-			m, err = sanitize(string(value), e.cfg.mappings)
+			m, err = e.names.field(string(value))
 			if err != nil {
 				return "", err
 			}
@@ -116,12 +117,12 @@ func sanitizeAs(f string, m map[string]string, allowed *regexp.Regexp) (string, 
 	}), nil
 }
 
-func sanitizeOrder(item string, m map[string]string) (string, error) {
+func sanitizeOrder(item string, names *resolver) (string, error) {
 	parts := strings.Fields(item)
 	if len(parts) == 0 {
 		return "", nil
 	}
-	field, err := sanitize(parts[0], m)
+	field, err := names.field(parts[0])
 	if err != nil {
 		return "", err
 	}

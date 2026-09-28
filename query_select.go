@@ -10,7 +10,7 @@ import (
 
 type SelectQuery interface {
 	Builder
-	From(main fromMain, opts ...fromOptions) SelectQuery
+	From(main fromSource, opts ...fromOptions) SelectQuery
 	Where(query criteria.Expression) SelectQuery
 	Page(page int, count int) SelectQuery
 	Sort(sort ...string) SelectQuery
@@ -35,10 +35,16 @@ type selectQuery struct {
 	window    string
 	offset    uint
 	limit     uint
+	view      *View
+	defaults  []string
 }
 
-func (q *selectQuery) From(main fromMain, opts ...fromOptions) SelectQuery {
-	q.from = []*from{main.from()}
+func (q *selectQuery) sortByDefault(sort []string) {
+	q.defaults = sort
+}
+
+func (q *selectQuery) From(main fromSource, opts ...fromOptions) SelectQuery {
+	q.from, q.view = main.source()
 	for _, opt := range opts {
 		q.from = append(q.from, opt())
 	}
@@ -96,23 +102,44 @@ func (q *selectQuery) Build(d Driver, opts ...BuildOption) (string, []any, error
 }
 
 func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error) {
-	returning, err := filterAll(q.returning, cfg.mappings)
-	if err != nil {
-		return "", err
+	names := newResolver(cfg, q.view)
+	returning := make([]string, 0, len(q.returning))
+	for _, item := range q.returning {
+		f, err := names.projection(item)
+		if err != nil {
+			return "", err
+		}
+		returning = append(returning, f)
 	}
-	group, err := filterAll(q.group, cfg.mappings)
-	if err != nil {
-		return "", err
+	group := make([]string, 0, len(q.group))
+	for _, item := range q.group {
+		f, err := names.field(item)
+		if err != nil {
+			return "", err
+		}
+		group = append(group, f)
 	}
 	sort := make([]string, 0, len(q.sort))
 	for _, item := range q.sort {
-		order, err := sanitizeOrder(item, cfg.mappings)
+		order, err := sanitizeOrder(item, names)
 		if err != nil {
 			return "", err
 		}
 		if order != "" {
 			sort = append(sort, order)
 		}
+	}
+	if len(sort) == 0 {
+		for _, item := range q.defaults {
+			order, err := sanitizeOrder(item, names)
+			if err != nil {
+				return "", err
+			}
+			sort = append(sort, order)
+		}
+	}
+	if len(sort) == 0 && q.limit != 0 {
+		return "", fmt.Errorf("a page needs an order: pass Sort, or declare the model's default sort")
 	}
 
 	var sb strings.Builder
@@ -128,10 +155,13 @@ func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 	if len(q.from) == 0 {
 		return "", fmt.Errorf("no table specified for select")
 	}
-	q.from[0].join = "from"
-	for _, f := range q.from {
+	for idx, f := range q.from {
 		sb.WriteString(" ")
-		sb.WriteString(f.join)
+		if idx == 0 {
+			sb.WriteString("from")
+		} else {
+			sb.WriteString(f.join)
+		}
 		sb.WriteString(" ")
 		if qq, ok := f.query.(*selectQuery); ok {
 			s, err := qq.build(d, cfg, p)
@@ -154,7 +184,7 @@ func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 	}
 
 	if q.where != nil {
-		w, err := newExpressionBuilder(q.where, d, cfg).build(p)
+		w, err := newExpressionBuilder(q.where, d, cfg, names).build(p)
 		if err != nil {
 			return "", err
 		}
@@ -174,11 +204,10 @@ func (q *selectQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		sb.WriteString(strings.Join(group, ","))
 	}
 
-	if len(sort) == 0 {
-		sort = []string{"id asc"}
+	if len(sort) > 0 {
+		sb.WriteString(" order by ")
+		sb.WriteString(strings.Join(sort, ","))
 	}
-	sb.WriteString(" order by ")
-	sb.WriteString(strings.Join(sort, ","))
 
 	if q.limit != 0 {
 		sb.WriteString(" limit ")

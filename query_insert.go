@@ -8,7 +8,7 @@ import (
 
 type InsertQuery interface {
 	Builder
-	Into(table fromTable) InsertQuery
+	Into(table fromTarget) InsertQuery
 	Values(values ...any) InsertQuery
 	From(main fromMain, opts ...fromOptions) InsertQuery
 	Conflict(conflict string, excluded ...string) InsertQuery
@@ -31,14 +31,15 @@ type insertQuery struct {
 	returning   []string
 }
 
-func (q *insertQuery) Into(table fromTable) InsertQuery {
-	q.table = table.from()
+func (q *insertQuery) Into(table fromTarget) InsertQuery {
+	q.table = table.target()
 	return q
 }
 
 func (q *insertQuery) From(main fromMain, opts ...fromOptions) InsertQuery {
-	main.from().join = "select"
-	q.from = []*from{main.from()}
+	source := *main.from()
+	source.join = "select"
+	q.from = []*from{&source}
 	for _, opt := range opts {
 		q.from = append(q.from, opt())
 	}
@@ -90,9 +91,6 @@ func (q *insertQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		return "", errors.New("no table for insert query")
 	}
 	sb.WriteString(q.table.table)
-	if q.table.alias != "" {
-		sb.WriteString(" " + q.table.alias)
-	}
 	returning := make([]string, 0, len(q.returning))
 	for _, field := range q.returning {
 		f, err := filtered(field)

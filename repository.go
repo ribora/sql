@@ -29,6 +29,14 @@ type Mappable interface {
 	Mappings() map[string]string
 }
 
+type DefaultSorted interface {
+	DefaultSort() []string
+}
+
+type sortable interface {
+	sortByDefault(sort []string)
+}
+
 type selectable interface {
 	Returning(fields ...string) SelectQuery
 }
@@ -81,12 +89,18 @@ func NewRepository[Model any, _ ScannableModel[Model]](connection Db, opts ...re
 		}
 	}
 
-	return &repository[Model]{DB: connection, mappings: config.mappings}, nil
+	var sort []string
+	if s, ok := any(&m).(DefaultSorted); ok {
+		sort = s.DefaultSort()
+	}
+
+	return &repository[Model]{DB: connection, mappings: config.mappings, sort: sort}, nil
 }
 
 type repository[Model any] struct {
 	DB       Db
 	mappings map[string]string
+	sort     []string
 }
 
 func (r *repository[Model]) Begin(ctx context.Context) (context.Context, func() error, func() error, error) {
@@ -132,6 +146,9 @@ func applyReturning[Model any](builder Builder, model *Model) {
 }
 
 func (r *repository[Model]) compile(builder Builder) (string, []any, error) {
+	if q, ok := builder.(sortable); ok && len(r.sort) > 0 {
+		q.sortByDefault(r.sort)
+	}
 	q, args, err := builder.Build(r.DB.Driver(), WithMappings(r.mappings))
 	if err != nil {
 		return q, args, fmt.Errorf("%w (%s, %v)", err, q, args)
@@ -202,6 +219,9 @@ func (r *repository[Model]) Select(ctx context.Context, builder Builder) (_ []*M
 				return nil, err
 			}
 			models = append(models, &model)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
 		}
 		return models, nil
 	})

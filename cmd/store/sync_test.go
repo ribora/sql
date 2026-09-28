@@ -11,7 +11,7 @@ import (
 func TestSyncWritesTheMissingField(t *testing.T) {
 	tmp := copyTree(t, caseDir(t, "unmapped_field"))
 
-	if err := generate(tmp, true); err == nil {
+	if err := generate(tmp, true, false); err == nil {
 		t.Fatal("expected the missing tag to fail the run")
 	}
 
@@ -27,7 +27,7 @@ func TestSyncWritesTheMissingField(t *testing.T) {
 func TestSyncAddsTheImportTheTypeNeeds(t *testing.T) {
 	tmp := copyTree(t, caseDir(t, "unmapped_import"))
 
-	if err := generate(tmp, true); err == nil {
+	if err := generate(tmp, true, false); err == nil {
 		t.Fatal("expected the missing tags to fail the run")
 	}
 
@@ -45,7 +45,7 @@ func TestSyncAddsTheImportTheTypeNeeds(t *testing.T) {
 func TestSyncSettlesOnTheSecondRun(t *testing.T) {
 	tmp := copyTree(t, caseDir(t, "unmapped_field"))
 
-	if err := generate(tmp, true); err == nil {
+	if err := generate(tmp, true, false); err == nil {
 		t.Fatal("expected the missing tag to fail the run")
 	}
 	setup := filepath.Join(tmp, "setup.go")
@@ -55,7 +55,7 @@ func TestSyncSettlesOnTheSecondRun(t *testing.T) {
 	source = source[:at] + "Lines []string `store:\"-\"`" + source[at+len("Lines []string"):]
 	writeFile(t, setup, []byte(source))
 
-	if err := generate(tmp, true); err != nil {
+	if err := generate(tmp, true, false); err != nil {
 		t.Fatalf("second run: %v", err)
 	}
 	if files := generatedFiles(t, tmp); len(files) != 1 {
@@ -76,7 +76,7 @@ func newStoredOrder(m *model.Order) *StoredOrder {
 	return &StoredOrder{Gone: m.Gone,
 `))
 
-	if err := generate(tmp, true); err != nil {
+	if err := generate(tmp, true, false); err != nil {
 		t.Fatalf("generate over broken output: %v", err)
 	}
 	got := readFile(t, stale)
@@ -99,7 +99,7 @@ package model_pkg
 func (m *StoredGone) Returns() []string { return nil }
 `))
 
-	if err := generate(tmp, true); err != nil {
+	if err := generate(tmp, true, false); err != nil {
 		t.Fatalf("generate beside stale output: %v", err)
 	}
 	if _, ok := generatedFiles(t, tmp)["stored_order_gen.go"]; !ok {
@@ -112,7 +112,7 @@ func TestBrokenSourceStillFailsTheRun(t *testing.T) {
 	tmp := copyTree(t, caseDir(t, "model_pkg"))
 	writeFile(t, filepath.Join(tmp, "broken.go"), []byte("package model_pkg\n\nfunc Broken() {\n"))
 
-	if err := generate(tmp, true); err == nil {
+	if err := generate(tmp, true, false); err == nil {
 		t.Fatal("expected the syntax error to fail the run")
 	}
 }

@@ -6,13 +6,13 @@ import (
 
 type CountQuery interface {
 	CountBuilder
-	From(main fromMain, opts ...fromOptions) CountQuery
+	From(main fromSource, opts ...fromOptions) CountQuery
 	Where(query criteria.Expression) CountQuery
 	Returning(fields ...string) CountQuery
 }
 
 func Count() CountQuery {
-	return &countQuery{q: Select("count(*) cnt").Sort("cnt")}
+	return &countQuery{q: Select("count(*) cnt")}
 }
 
 type countQuery struct {
@@ -24,7 +24,7 @@ func (c *countQuery) Build(driver Driver, opts ...BuildOption) (string, []any, e
 	return c.q.Build(driver, opts...)
 }
 
-func (c *countQuery) From(main fromMain, opts ...fromOptions) CountQuery {
+func (c *countQuery) From(main fromSource, opts ...fromOptions) CountQuery {
 	c.q.From(main, opts...)
 	return c
 }

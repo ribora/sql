@@ -9,7 +9,7 @@ import (
 
 type UpdateQuery interface {
 	Builder
-	Table(table fromTable) UpdateQuery
+	Table(table fromTarget) UpdateQuery
 	From(opts ...fromOptions) UpdateQuery
 	Where(query criteria.Expression) UpdateQuery
 	Returning(fields ...string) UpdateQuery
@@ -29,8 +29,8 @@ type updateQuery struct {
 	returning []string
 }
 
-func (q *updateQuery) Table(main fromTable) UpdateQuery {
-	q.table = main.from()
+func (q *updateQuery) Table(main fromTarget) UpdateQuery {
+	q.table = main.target()
 	return q
 }
 
@@ -85,8 +85,10 @@ func (q *updateQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 		if err != nil {
 			return "", err
 		}
-		sb.WriteString(" ")
-		sb.WriteString(s)
+		if s != "" {
+			sb.WriteString(" ")
+			sb.WriteString(s)
+		}
 	}
 
 	sb.WriteString(" set ")
@@ -108,36 +110,29 @@ func (q *updateQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 
 	var on string
 	if !d.UpdateAsJoin() {
-		if len(q.from) > 0 {
-			q.from[0].join = "from"
-		}
 		var s string
 		var err error
 		s, on, err = q.fromJoin(d, cfg, p)
 		if err != nil {
 			return "", err
 		}
-		sb.WriteString(" ")
-		sb.WriteString(s)
+		if s != "" {
+			sb.WriteString(" ")
+			sb.WriteString(s)
+		}
 	}
 
-	if q.where != nil || on != "" {
-		var wh []string
-		if on != "" {
-			wh = append(wh, on)
-		}
-		w, err := newExpressionBuilder(q.where, d, cfg).build(p)
-		if err != nil {
-			return "", err
-		}
-		if w != "" || on != "" {
-			wh = append(wh, w)
-		}
-		if len(wh) > 0 {
-			sb.WriteString(" where (")
-			sb.WriteString(strings.Join(wh, ") and ("))
-			sb.WriteString(")")
-		}
+	w, err := newExpressionBuilder(q.where, d, cfg, newResolver(cfg, nil)).build(p)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case on != "" && w != "":
+		sb.WriteString(" where (" + on + ") and (" + w + ")")
+	case on != "":
+		sb.WriteString(" where " + on)
+	case w != "":
+		sb.WriteString(" where " + w)
 	}
 
 	if len(returning) > 0 && d.Returning() {
@@ -152,7 +147,14 @@ func (q *updateQuery) fromJoin(d Driver, cfg *builderCfg, p *[]any) (string, str
 	var sb strings.Builder
 	var on string
 	for idx, f := range q.from {
-		sb.WriteString(f.join)
+		if idx > 0 {
+			sb.WriteString(" ")
+		}
+		if !d.UpdateAsJoin() && idx == 0 {
+			sb.WriteString("from")
+		} else {
+			sb.WriteString(f.join)
+		}
 		sb.WriteString(" ")
 		if qq, ok := f.query.(*selectQuery); ok {
 			s, err := qq.build(d, cfg, p)

@@ -9,7 +9,7 @@ import (
 
 type DeleteQuery interface {
 	DeleteBuilder
-	From(main fromTable, opts ...fromOptions) DeleteQuery
+	From(main fromTarget, opts ...fromOptions) DeleteQuery
 	Where(query criteria.Expression) DeleteQuery
 }
 
@@ -23,9 +23,10 @@ type deleteQuery struct {
 	where criteria.Expression
 }
 
-func (q *deleteQuery) From(main fromTable, opts ...fromOptions) DeleteQuery {
-	main.from().join = "from"
-	q.from = []*from{main.from()}
+func (q *deleteQuery) From(main fromTarget, opts ...fromOptions) DeleteQuery {
+	table := main.target()
+	table.join = "from"
+	q.from = []*from{table}
 	for _, opt := range opts {
 		q.from = append(q.from, opt())
 	}
@@ -52,7 +53,7 @@ func (q *deleteQuery) Build(d Driver, opts ...BuildOption) (string, []any, error
 
 func (q *deleteQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error) {
 	var sb strings.Builder
-	sb.WriteString("delete ")
+	sb.WriteString("delete")
 	if len(q.from) == 0 {
 		return "", fmt.Errorf("no table for delete")
 	}
@@ -81,7 +82,7 @@ func (q *deleteQuery) build(d Driver, cfg *builderCfg, p *[]any) (string, error)
 	}
 
 	if q.where != nil {
-		w, err := newExpressionBuilder(q.where, d, cfg).build(p)
+		w, err := newExpressionBuilder(q.where, d, cfg, newResolver(cfg, nil)).build(p)
 		if err != nil {
 			return "", err
 		}

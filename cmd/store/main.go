@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -14,20 +15,24 @@ import (
 )
 
 func main() {
-	os.Args = append(os.Args, ".")
-	path := os.Args[1]
+	strict := flag.Bool("strict", false, "stop on a stored struct that names no default sort")
+	flag.Parse()
+	path := flag.Arg(0)
+	if path == "" {
+		path = "."
+	}
 	var needTree bool
 	if strings.HasSuffix(path, "/...") {
 		needTree = true
 		path = path[:len(path)-4]
 	}
-	if err := generate(path, needTree); err != nil {
+	if err := generate(path, needTree, *strict); err != nil {
 		fmt.Fprintln(os.Stderr, "store:", err)
 		os.Exit(1)
 	}
 }
 
-func generate(path string, needTree bool) error {
+func generate(path string, needTree bool, strict bool) error {
 	byDir, err := targets(path, needTree)
 	if err != nil {
 		return err
@@ -39,7 +44,7 @@ func generate(path string, needTree bool) error {
 	sort.Strings(dirs)
 
 	for _, dir := range dirs {
-		if err := generateDir(dir, byDir[dir]); err != nil {
+		if err := generateDir(dir, byDir[dir], strict); err != nil {
 			return err
 		}
 	}
@@ -47,7 +52,7 @@ func generate(path string, needTree bool) error {
 }
 
 // Once per directory: it is the package that is type checked, not the file.
-func generateDir(dir string, files []string) error {
+func generateDir(dir string, files []string, strict bool) error {
 	pkg, err := loadPackage(dir)
 	if err != nil {
 		return err
@@ -64,7 +69,7 @@ func generateDir(dir string, files []string) error {
 	}
 
 	for _, f := range files {
-		packageName, lexems, err := parse(pkg, f)
+		packageName, lexems, err := parse(pkg, f, strict)
 		if err != nil {
 			return err
 		}

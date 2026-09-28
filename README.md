@@ -121,6 +121,47 @@ q := sql.Update(map[string]any{"version": sql.Expr("version + 1")}).
 q := sql.Delete().From(sql.Table("logs")).Where(criteria.And().Add("created_at", "lt", oldDate))
 ```
 
+### View: a Table With Its Joins
+
+A view declares once what a model is read from: a base table, its joins, and
+where the columns that are not the base table's come from. It lives in Go only;
+nothing is created in the database. It goes wherever a table does.
+
+```go
+var contracts = sql.NewView(sql.Table("contracts").As("c"),
+    sql.LeftJoin(sql.Table("lines").As("l"), "l.id = c.primary_line_id"),
+).
+    Column("facility", "l.facility").
+    Column("line_kind", "l.kind")
+
+sql.Select().From(contracts).Returning("id", "line_kind").
+    Where(criteria.And("facility", "eq", "msk-1").Add("customerId", "eq", 10)).
+    Sort("createdAt desc")
+// select c.id, l.kind line_kind from contracts c left join lines l on l.id = c.primary_line_id
+//   where (l.facility = $1) and (c.customer_id = $2) order by c.created_at desc
+```
+
+In `Select` and `Count` every name — returning, where, sort, group — is placed by
+one rule: the mappings turn a field into a column, a declared column takes its
+expression, and any other column is qualified with the base table. A view
+without joins qualifies nothing and builds what its table does. A column may be
+any expression, `Column("title", "coalesce(l.name, c.name)")`; it is written in
+parentheses, as given, so it is code and never input.
+
+A qualified name such as `l.price` is refused in a condition, a sort or a group
+unless a mapping produced it: criteria usually come from outside, and through a
+view they would reach every column of every joined table. Declare what may be
+reached with `Column`, or map it.
+
+A declared column wins over a base column of the same name, silently: name the
+declared columns so they cannot meet one (`line_kind` rather than `kind`).
+
+`Insert().Into`, `Update().Table` and `Delete().From` take a view too and write
+its base table, exactly as they write `sql.Table`: the joins and the declared
+columns take no part, and a declared column in a write's condition fails in the
+database. A field read through the joins is therefore `store:",readonly"` on the
+stored struct.
+
 ### PLAIN (Raw SQL)
 
 The `Plain` builder executes a hand-written SQL string.
@@ -243,6 +284,30 @@ type storedReading struct {
 That is how a read model is written — projected by a query, never turned back
 into a domain type. Neither constructor is generated, so there is no model to
 check the fields against.
+
+### The Default Sort
+
+`sort:` on the `_` field is what a select is ordered by when it has no `Sort` of
+its own — the same items `Sort` takes, separated by `|`:
+
+```go
+type storedEvent struct {
+    _ *model.Event `store:"sort:created_at desc|id"`
+    ...
+}
+```
+
+It generates `DefaultSort() []string`, which the repository applies. Every
+item's column must be a `db` tag of the struct — a `store:"-"` field's counts,
+the column is still in the table — and its tail `asc`/`desc` then
+`nulls first`/`nulls last`, or the run stops: renaming a column cannot leave the
+sort behind.
+
+A select with neither its own `Sort` nor a default sort has no `order by`, and
+`Page` on it is an error rather than pages in an arbitrary order.
+
+`go tool store -strict $GOFILE` stops on a stored struct that names no default
+sort, so one is declared everywhere. Flags go before the path.
 
 ### Field Tags
 

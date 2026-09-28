@@ -30,6 +30,7 @@ var successCases = []string{
 	"csv_with_json",
 	"wrapping_pkg",
 	"no_model",
+	"sorted",
 }
 
 var errorCases = []struct {
@@ -45,6 +46,8 @@ var errorCases = []struct {
 	{"err_untagged_field", "a field needs a db tag"},
 	{"unmapped_field", "StoredDoc.Lines"},
 	{"err_broken_model", "the type does not resolve"},
+	{"err_unknown_sort", `sort "code": no field has that db tag`},
+	{"err_bad_sort", `sort "code upwards": a column, then asc or desc`},
 }
 
 func TestGoldens(t *testing.T) {
@@ -53,7 +56,7 @@ func TestGoldens(t *testing.T) {
 			src := caseDir(t, name)
 			tmp := copyTree(t, src)
 
-			if err := generate(tmp, true); err != nil {
+			if err := generate(tmp, true, false); err != nil {
 				t.Fatalf("generate: %v", err)
 			}
 
@@ -89,7 +92,7 @@ func TestErrors(t *testing.T) {
 	for _, c := range errorCases {
 		t.Run(c.dir, func(t *testing.T) {
 			tmp := copyTree(t, caseDir(t, c.dir))
-			err := generate(tmp, true)
+			err := generate(tmp, true, false)
 			if err == nil {
 				t.Fatalf("expected an error containing %q, got none", c.errContains)
 			}
@@ -100,6 +103,21 @@ func TestErrors(t *testing.T) {
 				t.Errorf("a file was written despite the error: %v", keys(files))
 			}
 		})
+	}
+}
+
+func TestStrict(t *testing.T) {
+	if err := generate(copyTree(t, caseDir(t, "sorted")), true, true); err != nil {
+		t.Errorf("sorted: %v", err)
+	}
+
+	tmp := copyTree(t, caseDir(t, "basic"))
+	err := generate(tmp, true, true)
+	if err == nil || !strings.Contains(err.Error(), "StoredUser: no default sort") {
+		t.Errorf("basic: got %v, want the missing sort named", err)
+	}
+	if files := generatedFiles(t, tmp); len(files) > 0 {
+		t.Errorf("a file was written despite the error: %v", keys(files))
 	}
 }
 
