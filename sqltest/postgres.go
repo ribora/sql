@@ -90,11 +90,20 @@ type Postgres struct {
 
 	db     sql.Db
 	handle *dbSql.DB
+	fault  fault
 }
 
 func (p *Postgres) Name() string { return "postgres" }
 
-func (p *Postgres) Db() sql.Db { return p.db }
+func (p *Postgres) Db() sql.Db {
+	if p.db == nil {
+		return nil
+	}
+	return &faultyDb{inner: p.db, fault: &p.fault}
+}
+
+// Every Db handed out fails with err until Reset; nil reads as a refused connection.
+func (p *Postgres) FailWith(err error) { p.fault.fail(err) }
 
 func (p *Postgres) Handle() *dbSql.DB { return p.handle }
 
@@ -152,6 +161,7 @@ func (p *Postgres) Migrate(ctx context.Context) error {
 // Truncate rather than a held-open transaction: the scenario talks to the
 // service over a real connection, and context values do not cross that.
 func (p *Postgres) Reset(ctx context.Context) error {
+	p.fault.heal()
 	if len(p.tables) == 0 {
 		return nil
 	}
