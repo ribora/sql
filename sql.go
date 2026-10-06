@@ -9,7 +9,7 @@ import (
 	"gitlab.com/gorib/sql/driver"
 )
 
-func newSql(driverName, dsn string) (Db, error) {
+func newSql(driverName, dsn string) (closableDb, error) {
 	var drv Driver
 	switch driverName {
 	case "sqlite3", "sqlite":
@@ -66,6 +66,13 @@ func (s *sqlDb) DbSql() (*sql.DB, error) {
 		s.db = conn
 	})
 	return s.db, s.err
+}
+
+func (s *sqlDb) Close() error {
+	if s.db == nil {
+		return nil
+	}
+	return s.db.Close()
 }
 
 type sqlAdapter struct {

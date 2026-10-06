@@ -1,6 +1,9 @@
 package sql
 
-import "testing"
+import (
+	"io"
+	"testing"
+)
 
 // The migrate command asks for the handle without calling Connect.
 func TestSqlDbSqlWithoutConnect(t *testing.T) {
@@ -40,6 +43,42 @@ func TestSqliteNames(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSqlCloseClosesTheHandle(t *testing.T) {
+	db, err := NewDb("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err := db.DbSql()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = closeDb(t, db); err != nil {
+		t.Fatal(err)
+	}
+	if handle.Ping() == nil {
+		t.Error("the handle answers after Close")
+	}
+}
+
+func TestSqlCloseBeforeOpen(t *testing.T) {
+	db, err := NewDb("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = closeDb(t, db); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func closeDb(t *testing.T, db Db) error {
+	t.Helper()
+	closer, ok := db.(io.Closer)
+	if !ok {
+		t.Fatal("NewDb returned no io.Closer, so the container never closes it")
+	}
+	return closer.Close()
 }
 
 // Connect runs on every transaction; a pool swapped on a failed ping leaks the

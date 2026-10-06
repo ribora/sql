@@ -13,7 +13,7 @@ import (
 	"gitlab.com/gorib/sql/driver"
 )
 
-func newPgx(dsn string) Db {
+func newPgx(dsn string) closableDb {
 	return &pgxDb{
 		dsn:    dsn,
 		driver: driver.NewPostgres(),
@@ -66,6 +66,16 @@ func (s *pgxDb) DbSql() (*dbSql.DB, error) {
 		s.handle, s.handleErr = dbSql.Open("pgx", s.dsn)
 	})
 	return s.handle, s.handleErr
+}
+
+func (s *pgxDb) Close() error {
+	if s.db != nil {
+		s.db.Close()
+	}
+	if s.handle == nil {
+		return nil
+	}
+	return s.handle.Close()
 }
 
 type pgxAdapter struct {

@@ -8,6 +8,7 @@ import (
 	"context"
 	dbSql "database/sql"
 	"errors"
+	"io"
 	"runtime"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ import (
 const instrumentationName = "gitlab.com/gorib/sql"
 
 func NewDb(driver, dsn string) (Db, error) {
-	var inner Db
+	var inner closableDb
 	var err error
 	switch driver {
 	case "postgres", "pgx", "pgsql":
@@ -45,8 +46,13 @@ func systemName(driver string) string {
 	}
 }
 
+type closableDb interface {
+	Db
+	io.Closer
+}
+
 type tracedDb struct {
-	inner  Db
+	inner  closableDb
 	system string
 }
 
@@ -124,6 +130,7 @@ func (t *tracedDb) Begin(ctx context.Context) (tx Tx, err error) {
 
 func (t *tracedDb) Driver() Driver            { return t.inner.Driver() }
 func (t *tracedDb) DbSql() (*dbSql.DB, error) { return t.inner.DbSql() }
+func (t *tracedDb) Close() error              { return t.inner.Close() }
 
 type spanCloser struct {
 	span hilton.Span

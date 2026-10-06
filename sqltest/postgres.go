@@ -7,6 +7,7 @@ import (
 	dbSql "database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -191,8 +192,8 @@ func (p *Postgres) Down(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if p.handle != nil {
-		_ = p.handle.Close()
+	if closer, ok := p.db.(io.Closer); ok {
+		_ = closer.Close()
 		p.handle, p.db = nil, nil
 	}
 	return p.drop(ctx, name)
