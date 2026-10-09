@@ -45,6 +45,27 @@ func TestSqliteNames(t *testing.T) {
 	}
 }
 
+func TestDialectIsOnePerBackend(t *testing.T) {
+	for name, want := range map[string]string{
+		"postgres": "postgres",
+		"pgx":      "postgres",
+		"pgsql":    "postgres",
+		"mysql":    "mysql",
+		"sqlite":   "sqlite",
+		"sqlite3":  "sqlite",
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, err := NewDb(name, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := db.Driver().Dialect(); got != want {
+				t.Errorf("dialect %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestSqlCloseClosesTheHandle(t *testing.T) {
 	db, err := NewDb("sqlite", ":memory:")
 	if err != nil {

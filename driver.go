@@ -6,4 +6,5 @@ type Driver interface {
 	Placeholder(pos int) string
 	Conflict(conflict string, updates []string) string
 	UpdateAsJoin() bool
+	Dialect() string
 }

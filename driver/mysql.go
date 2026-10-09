@@ -57,3 +57,7 @@ func (m mysqlDriver) Conflict(conflict string, updates []string) string {
 func (m mysqlDriver) UpdateAsJoin() bool {
 	return true
 }
+
+func (m mysqlDriver) Dialect() string {
+	return "mysql"
+}

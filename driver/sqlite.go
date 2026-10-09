@@ -52,3 +52,7 @@ func (p sqliteDriver) Conflict(conflict string, updates []string) string {
 func (p sqliteDriver) UpdateAsJoin() bool {
 	return false
 }
+
+func (p sqliteDriver) Dialect() string {
+	return "sqlite"
+}

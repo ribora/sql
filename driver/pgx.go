@@ -129,6 +129,10 @@ func (p pgxDriver) UpdateAsJoin() bool {
 	return false
 }
 
+func (p pgxDriver) Dialect() string {
+	return "postgres"
+}
+
 func homogenizeSlice(rv reflect.Value) (any, bool) {
 	if rv.Type().Elem().Kind() != reflect.Interface {
 		return nil, false
