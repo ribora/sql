@@ -326,6 +326,8 @@ func errorType(err error) string {
 		return "no_rows"
 	case errors.Is(classified, ErrBadRequest):
 		return "bad_request"
+	case errors.Is(classified, ErrNoColumn):
+		return "no_column"
 	case errors.Is(classified, ErrInternal):
 		return "internal"
 	case errors.Is(err, ErrCannotConnectDb):

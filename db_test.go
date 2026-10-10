@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -25,6 +26,8 @@ func TestErrorType(t *testing.T) {
 		{"foreign key", &pgconn.PgError{Code: "23503"}, "conflict"},
 		{"deadlock", &pgconn.PgError{Code: "40P01"}, "deadlock"},
 		{"not null", &pgconn.PgError{Code: "23502"}, "bad_request"},
+		{"undefined column", &pgconn.PgError{Code: "42703"}, "no_column"},
+		{"unknown column in mysql", &mysql.MySQLError{Number: 1054}, "no_column"},
 		{"any other pg code", &pgconn.PgError{Code: "42601"}, "internal"},
 		{"no rows", dbSql.ErrNoRows, "no_rows"},
 		{"no rows from pgx", pgx.ErrNoRows, "no_rows"},
@@ -40,6 +43,28 @@ func TestErrorType(t *testing.T) {
 				t.Errorf("errorType(%v) = %q, want %q", c.err, got, c.want)
 			}
 		})
+	}
+}
+
+func TestNoSuchColumnInSqlite(t *testing.T) {
+	db, err := dbSql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec("create table t (id int)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec("select status from t")
+	if !errors.Is(NewError(err), ErrNoColumn) {
+		t.Errorf("NewError(%v) is not ErrNoColumn", err)
+	}
+
+	_, err = db.Exec("select from t")
+	if errors.Is(NewError(err), ErrNoColumn) {
+		t.Errorf("syntax error %v classified as ErrNoColumn", err)
 	}
 }
 

@@ -37,6 +37,7 @@ var (
 	ErrNoRows      = errors.New("no rows in result set")
 	ErrBadRequest  = errors.New("bad request")
 	ErrDeadlock    = errors.New("deadlock")
+	ErrNoColumn    = errors.New("column does not exist")
 	ErrInternal    = errors.New("internal error")
 )
 
@@ -77,6 +78,8 @@ func NewError(err error) error {
 			result.code = ErrBadRequest
 		case "40P01": // deadlock_detected
 			result.code = ErrDeadlock
+		case "42703": // undefined_column
+			result.code = ErrNoColumn
 		}
 		return result
 	}
@@ -100,6 +103,8 @@ func NewError(err error) error {
 			result.code = ErrConflict
 		case 1048, 1364: // Column cannot be null / doesn't have default
 			result.code = ErrBadRequest
+		case 1054: // Unknown column
+			result.code = ErrNoColumn
 		}
 		return result
 	}
@@ -123,6 +128,10 @@ func NewError(err error) error {
 			result.code = ErrDeadlock
 		case 1299: // SQLITE_CONSTRAINT_NOTNULL
 			result.code = ErrBadRequest
+		case 1: // SQLITE_ERROR has no extended code for a missing column
+			if strings.Contains(sqliteErr.Error(), "no such column") {
+				result.code = ErrNoColumn
+			}
 		}
 		return result
 	}
