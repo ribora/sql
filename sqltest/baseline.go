@@ -34,7 +34,9 @@ func (p *Postgres) remember(ctx context.Context) error {
 
 func (p *Postgres) rememberRows(ctx context.Context, table string) error {
 	var filled bool
-	row := p.handle.QueryRowContext(ctx, "select exists(select 1 from "+quoteIdent(table)+")")
+	row := p.handle.QueryRowContext(ctx,
+		"select not relispartition and exists(select 1 from "+quoteIdent(table)+") from pg_class where oid = $1::regclass",
+		quoteIdent(table))
 	if err := row.Scan(&filled); err != nil || !filled {
 		return err
 	}

@@ -99,6 +99,19 @@ func TestNothingIsKeptWhenTheMigrationsLeaveNoRows(t *testing.T) {
 		`select exists(select 1 from information_schema.schemata where schema_name = 'sqltest_baseline')::text`))
 }
 
+func TestAPartitionedTableComesBackOnce(t *testing.T) {
+	p := migrated(t, "partitioned", `
+create table events (id bigserial, at date not null, name text not null) partition by range (at);
+create table events_2026 partition of events for values from ('2026-01-01') to ('2027-01-01');
+insert into events (at, name) values ('2026-03-01', 'seeded');
+`)
+
+	require.NoError(t, p.Reset(t.Context()))
+
+	assert.Equal(t, []string{"1 seeded"}, column(t, p, `select id || ' ' || name from events`))
+	assert.Equal(t, []string{"2"}, column(t, p, `insert into events (at, name) values ('2026-04-01', 'next') returning id`))
+}
+
 func TestMigrationsThatCreateNoTablesLeaveNothingToReset(t *testing.T) {
 	p := migrated(t, "none", `select 1`)
 
