@@ -178,6 +178,9 @@ func (p *Postgres) Reset(ctx context.Context) error {
 	if p.handle == nil {
 		return errors.New("sqltest: the database is not open — Provision has not run, or Down already closed it")
 	}
+	if err := p.lift(ctx); err != nil {
+		return fmt.Errorf("cannot lift the refusals on %s: %w", address(p.dsn), err)
+	}
 	if err := p.restore(ctx); err != nil {
 		return fmt.Errorf("cannot reset %s: %w", address(p.dsn), err)
 	}
