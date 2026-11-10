@@ -49,11 +49,24 @@ func (p *Postgres) Refuse(ctx context.Context, table string, refused ...Write) e
 }
 
 func (p *Postgres) RefuseAfter(ctx context.Context, table string, rows int, refused ...Write) error {
+	return p.refuse(ctx, table, rows, refused, "", func(name, events string) string {
+		return "create trigger " + name + " before " + events + " on " + quoteIdent(table) + " for each row"
+	})
+}
+
+func (p *Postgres) RefuseCommit(ctx context.Context, table string, refused ...Write) error {
+	return p.refuse(ctx, table, 0, refused, "commit_", func(name, events string) string {
+		return "create constraint trigger " + name + " after " + events + " on " + quoteIdent(table) +
+			" deferrable initially deferred for each row"
+	})
+}
+
+func (p *Postgres) refuse(ctx context.Context, table string, rows int, refused []Write, kind string, trigger func(name, events string) string) error {
 	events, err := triggerEvents(refused)
 	if err != nil {
 		return err
 	}
-	name := "sqltest_refuse_" + strings.Join(events, "_")
+	name := "sqltest_refuse_" + kind + strings.Join(events, "_")
 
 	tx, err := p.handle.BeginTx(ctx, nil)
 	if err != nil {
@@ -70,17 +83,21 @@ func (p *Postgres) RefuseAfter(ctx context.Context, table string, rows int, refu
 		quoteIdent(table), name, rows); err != nil {
 		return fmt.Errorf("cannot refuse writes to %s: %w", table, err)
 	}
-	if _, err = tx.ExecContext(ctx, "create or replace trigger "+name+
-		" before "+strings.Join(events, " or ")+" on "+quoteIdent(table)+
-		" for each row execute function "+refusalSchema+".refuse()"); err != nil {
+	if _, err = tx.ExecContext(ctx, "drop trigger if exists "+name+" on "+quoteIdent(table)); err != nil {
+		return fmt.Errorf("cannot refuse writes to %s: %w", table, err)
+	}
+	if _, err = tx.ExecContext(ctx, trigger(name, strings.Join(events, " or "))+
+		" execute function "+refusalSchema+".refuse()"); err != nil {
 		return fmt.Errorf("cannot refuse writes to %s: %w", table, err)
 	}
 	return tx.Commit()
 }
 
 func (p *Postgres) lift(ctx context.Context) error {
-	_, err := p.handle.ExecContext(ctx, "drop schema if exists "+refusalSchema+" cascade")
-	return err
+	if _, err := p.handle.ExecContext(ctx, "drop schema if exists "+refusalSchema+" cascade"); err != nil {
+		return fmt.Errorf("cannot lift the refusals on %s: %w", address(p.dsn), err)
+	}
+	return nil
 }
 
 func triggerEvents(refused []Write) ([]string, error) {

@@ -88,6 +88,48 @@ func TestRefusingAgainReplacesTheQuota(t *testing.T) {
 	assert.NoError(t, attempt(t, p, `insert into states (name) values ('first')`))
 }
 
+func TestACommitRefusalLetsTheStatementsThroughAndFailsTheCommit(t *testing.T) {
+	p := migrated(t, "commit", seeded)
+	require.NoError(t, p.RefuseCommit(t.Context(), "states"))
+
+	tx, err := p.Handle().BeginTx(t.Context(), nil)
+	require.NoError(t, err)
+	_, err = tx.ExecContext(t.Context(), `insert into states (name) values ('extra')`)
+	require.NoError(t, err)
+
+	assert.ErrorContains(t, tx.Commit(), "insert on states is refused")
+	assert.Equal(t, []string{"new", "active", "closed"}, column(t, p, `select name from states order by id`))
+}
+
+func TestACommitRefusalLeavesATransactionThatDidNotWriteTheTableAlone(t *testing.T) {
+	p := migrated(t, "elsewherecommit", seeded)
+	require.NoError(t, p.RefuseCommit(t.Context(), "states"))
+
+	tx, err := p.Handle().BeginTx(t.Context(), nil)
+	require.NoError(t, err)
+	_, err = tx.ExecContext(t.Context(), `select name from states`)
+	require.NoError(t, err)
+	_, err = tx.ExecContext(t.Context(), `insert into vendors (state_id, name) values (1, 'R2')`)
+	require.NoError(t, err)
+
+	assert.NoError(t, tx.Commit())
+}
+
+func TestHealLiftsTheRefusalsAndKeepsTheRows(t *testing.T) {
+	p := migrated(t, "healed", seeded)
+	apply(t, p, `insert into states (name) values ('extra')`)
+	require.NoError(t, p.Refuse(t.Context(), "vendors"))
+	p.FailWith(nil)
+
+	require.NoError(t, p.Heal(t.Context()))
+
+	assert.NoError(t, attempt(t, p, `insert into vendors (state_id, name) values (1, 'R2')`))
+	tx, err := p.Db().Begin(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, tx.Rollback(t.Context()))
+	assert.Equal(t, []string{"new", "active", "closed", "extra"}, column(t, p, `select name from states order by id`))
+}
+
 func TestResetLiftsTheRefusals(t *testing.T) {
 	p := migrated(t, "lifted", seeded)
 	require.NoError(t, p.Refuse(t.Context(), "vendors"))

@@ -602,16 +602,20 @@ it carries the SQL the repositories build, and a stand-in tests none of it.
   by side, and `Down` drops it. **`Suffix`** gives a second instance its own
   database.
 - **`FailWith(err)`** fails every `Db` the resource handed out, with `err` (nil
-  reads as a refused connection), until the next `Reset`.
+  reads as a refused connection), until `Heal` or the next `Reset`.
 - **`Refuse(ctx, table, writes...)`** makes Postgres refuse writes to one table
-  until the next `Reset`: every insert, update and delete, or only the `Insert`,
-  `Update`, `Delete` named. Reads and the other tables go on working, so a case
-  can check what the failed write left behind. **`RefuseAfter(ctx, table, rows,
-  writes...)`** lets that many rows through first; a rolled-back row gives its
-  place back. A trigger refuses, not the `Db`, so the refusal reaches every
-  connection, `Handle()` included, and a write in `QueryRow` or a CTE as well as
-  in `Exec`. The service sees Postgres's own error, which `sql.NewError` reads
-  as `ErrInternal`.
+  until `Heal` or the next `Reset`: every insert, update and delete, or only the
+  `Insert`, `Update`, `Delete` named. Reads and the other tables go on working,
+  so a case can check what the failed write left behind. **`RefuseAfter(ctx,
+  table, rows, writes...)`** lets that many rows through first; a rolled-back row
+  gives its place back. **`RefuseCommit(ctx, table, writes...)`** lets every
+  statement through and fails the commit of a transaction that wrote the table —
+  for a case about what gets out before the commit. A trigger refuses, not the
+  `Db`, so the refusal reaches every connection, `Handle()` included, and a write
+  in `QueryRow` or a CTE as well as in `Exec`. The service sees Postgres's own
+  error, which `sql.NewError` reads as `ErrInternal`.
+- **`Heal(ctx)`** ends `FailWith` and every refusal and leaves the rows as they
+  are — for a case where the database comes back.
 
 ---
 
