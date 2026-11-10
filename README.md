@@ -591,8 +591,13 @@ it carries the SQL the repositories build, and a stand-in tests none of it.
   nothing is skipped. Errors carry host, port and database, never the DSN.
 - **`Migrate`** runs `Migrations`, then finds the tables unless `Tables` lists
   them; the bookkeeping tables (`goose_db_version`, `migrations`,
-  `schema_migrations`) are left out.
-- **`Reset`** truncates those tables. It empties; it does not recreate.
+  `schema_migrations`) are left out. The rows the migrations wrote, and where
+  each sequence stood, are kept aside in the `sqltest_baseline` schema.
+- **`Reset`** puts those tables back as `Migrate` left them: a row a migration
+  wrote stays, a scenario's row goes, and ids go on after the seeded ones.
+  Putting rows back needs a superuser; migrations that write no rows need none.
+  Without `Ephemeral` the database outlives the run, and what the last run left
+  in it counts as what the migrations left.
 - **`Ephemeral`** puts the process id into the database name so packages run side
   by side, and `Down` drops it. **`Suffix`** gives a second instance its own
   database.

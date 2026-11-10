@@ -88,6 +88,8 @@ type Postgres struct {
 	started bool
 	base    string // the name before the process id, for the sweep
 
+	baseline baseline
+
 	db     sql.Db
 	handle *dbSql.DB
 	fault  fault
@@ -153,9 +155,15 @@ func (p *Postgres) Migrate(ctx context.Context) error {
 		}
 	}
 	if len(p.tables) == 0 {
-		return p.discover(ctx)
+		if err := p.discover(ctx); err != nil {
+			return err
+		}
 	}
-	return nil
+	if err := p.remember(ctx); err != nil {
+		return fmt.Errorf("cannot keep what the migrations left in %s: %w", address(p.dsn), err)
+	}
+	// Once here, so a restore that cannot work fails the one Migrate, not every Reset.
+	return p.Reset(ctx)
 }
 
 // Truncate rather than a held-open transaction: the scenario talks to the
@@ -170,13 +178,8 @@ func (p *Postgres) Reset(ctx context.Context) error {
 	if p.handle == nil {
 		return errors.New("sqltest: the database is not open — Provision has not run, or Down already closed it")
 	}
-	quoted := make([]string, 0, len(p.tables))
-	for _, table := range p.tables {
-		quoted = append(quoted, quoteIdent(table))
-	}
-	statement := "truncate " + strings.Join(quoted, ", ") + " restart identity cascade"
-	if _, err := p.handle.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("cannot empty %s: %w", address(p.dsn), err)
+	if err := p.restore(ctx); err != nil {
+		return fmt.Errorf("cannot reset %s: %w", address(p.dsn), err)
 	}
 	return nil
 }
