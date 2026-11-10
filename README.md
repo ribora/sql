@@ -1,6 +1,6 @@
-# Storage SQL Module
+# gorib/sql
 
-The `storage/sql` package is a high-performance SQL toolkit for Go built on zero-runtime-reflection and clean domain model principles.
+`gitlab.com/gorib/sql` is a high-performance SQL toolkit for Go built on zero-runtime-reflection and clean domain model principles.
 
 ## 1. Architecture and Drivers
 
@@ -69,8 +69,8 @@ one fails when the query is built:
 case-sensitive match instead of an error. The matrix is pinned by
 `driver/operations_test.go`.
 
-Each driver also accepts the raw SQL spelling (`=`, `!=`, `@>`) and the usual
-synonyms (`in`, `neq`, `nin`, `gte`, `lte`).
+Each driver also accepts the raw SQL spelling (`=`, `!=`, and `@>` on Postgres)
+and the usual synonyms (`in`, `neq`, `nin`, `gte`, `lte`).
 
 ### SELECT
 
@@ -96,9 +96,15 @@ sub := sql.Select("id").From(sql.Table("banned_users"))
 q := sql.Select().From(sql.Table("posts")).
     Where(criteria.And().Add("user_id", "in", sub))
 
+// Subquery in FROM
+q := sql.Select().From(sql.Query(sub, "b"))
+
 // Column-to-column comparison
 q := sql.Select().From(sql.Table("users")).
     Where(criteria.And().Add("updated_at", "gt", sql.Expr("created_at")))
+
+// COUNT, for Repository.Count
+q := sql.Count().From(sql.Table("users")).Where(criteria.And("status", "eq", "active"))
 ```
 
 ### INSERT, UPDATE, DELETE
@@ -107,8 +113,11 @@ q := sql.Select().From(sql.Table("users")).
 // INSERT with RETURNING
 q := sql.Insert("name").Into(sql.Table("users")).Values("Alice").Returning("id")
 
+// INSERT that updates on a key conflict: the key, then the columns to update
+q := sql.Insert("id", "name").Into(sql.Table("users")).Values(1, "Alice").Conflict("id", "name")
+
 // UPDATE with aliases
-q := sql.Update(map[string]any{"u.status": "active"}).
+q := sql.Update(map[string]any{"vip": true}).
     Table(sql.Table("users").As("u")).
     From(sql.Join(sql.Table("orders").As("o"), "u.id = o.user_id")).
     Where(criteria.And().Add("o.total", "gt", 1000))
@@ -121,11 +130,17 @@ q := sql.Update(map[string]any{"version": sql.Expr("version + 1")}).
 q := sql.Delete().From(sql.Table("logs")).Where(criteria.And().Add("created_at", "lt", oldDate))
 ```
 
+The keys of `Update`'s map name columns of the target table without a
+qualifier: a key such as `u.status` is valid in MySQL and refused by Postgres.
+
 ### View: a Table With Its Joins
 
 A view declares once what a model is read from: a base table, its joins, and
 where the columns that are not the base table's come from. It lives in Go only;
-nothing is created in the database. It goes wherever a table does.
+nothing is created in the database. It stands where a table does as the main
+source or target of a statement — `Select().From`, `Count().From`,
+`Insert().Into`, `Update().Table`, `Delete().From` — but is not itself joined or
+aliased: its base table carries the alias.
 
 ```go
 var contracts = sql.NewView(sql.Table("contracts").As("c"),
@@ -157,10 +172,10 @@ A declared column wins over a base column of the same name, silently: name the
 declared columns so they cannot meet one (`line_kind` rather than `kind`).
 
 `Insert().Into`, `Update().Table` and `Delete().From` take a view too and write
-its base table, exactly as they write `sql.Table`: the joins and the declared
-columns take no part, and a declared column in a write's condition fails in the
-database. A field read through the joins is therefore `store:",readonly"` on the
-stored struct.
+its base table, without the alias: the joins and the declared columns take no
+part, and a declared column in a write's condition fails in the database. A
+field read through the joins is therefore `store:",readonly"` on the stored
+struct.
 
 ### PLAIN (Raw SQL)
 
@@ -258,6 +273,18 @@ func (m *storedUser) Updates() map[string]any {
 // UpdatesIdentity ignores readonly and includes the field because the group is named explicitly
 func (m *storedUser) UpdatesIdentity() map[string]any {
     return map[string]any{"id": m.Id}
+}
+
+// Inserts lists the non-readonly columns with their values;
+// Inserts<Group>() does for `inserts:Group` what Updates<Group>() does for updates
+func (m *storedUser) Inserts() ([]string, []any) {
+    return []string{"email", "last_login", "roles", "name"},
+        []any{m.Email, m.LastLogin, m.Roles, m.Name}
+}
+
+// Mappings turns a model field name into its column; the repository reads it
+func (m *storedUser) Mappings() map[string]string {
+    return map[string]string{"id": "id", "email": "email", "lastLogin": "last_login", "roles": "roles", "fullName": "name"}
 }
 ```
 
@@ -386,9 +413,22 @@ stopped wrote no `_gen.go`.
 
 The `store` code generator produces both methods automatically.
 
+### Constructing a Repository
+
+```go
+users, err := sql.NewRepository[storedUser](db)
+```
+
+`NewRepository` refuses a model whose `Scan` has a value receiver. A model with
+`Mappings() map[string]string` — the generator writes it — tells the repository
+which column a field name is; `sql.WithExtraMapping(map[string]string)` adds
+entries, and a name with no entry becomes snake_case (`customerId` →
+`customer_id`). A model with `DefaultSort() []string` supplies the order of a
+select that has none.
+
 ### Automatic RETURNING
 
-The repository automatically appends `Returning(...)` to `INSERT` and `UPDATE` queries when the driver supports it (e.g., PostgreSQL). This lets you retrieve generated values (such as auto-incremented IDs) in the same round-trip.
+The repository automatically appends `Returning(...)` to `INSERT` and `UPDATE` queries when the driver supports it (e.g., PostgreSQL). This lets you retrieve generated values (such as auto-incremented IDs) in the same round-trip. Where the driver has no `RETURNING` (MySQL), `Get` on an `INSERT` or `UPDATE` runs the statement and returns a zero `Model` with a nil error: read the row back with a select.
 
 ```go
 func (r *userRepo) Create(ctx context.Context, user *model.User) (*model.User, error) {
@@ -411,7 +451,25 @@ func (r *userRepo) Create(ctx context.Context, user *model.User) (*model.User, e
 | `Get(ctx, builder)` | Returns a single `*Model`. |
 | `Select(ctx, builder)` | Returns `[]*Model`. |
 | `Delete(ctx, builder)` | Executes a DELETE. |
-| `Count(ctx, builder)` | Returns the row count. |
+| `Count(ctx, builder)` | Returns the row count; takes `sql.Count()`. |
+
+### Errors
+
+The four methods above return their errors through `sql.NewError`, which maps
+the driver's error onto a sentinel — `ErrNoRows`, `ErrConflict`,
+`ErrBadRequest`, `ErrDeadlock`, `ErrNoColumn`, `ErrInternal`, each also matching
+`ErrQueryFailed` — and keeps the original in the chain. `sql.FromError` reads a
+classified error as returned, without unwrapping:
+
+```go
+user, err := users.Get(ctx, q)
+if errors.Is(err, sql.ErrNoRows) {
+    // not found
+}
+if e, ok := sql.FromError(err); ok && errors.Is(e, sql.ErrConflict) {
+    // e.Field() and e.Constraint() name what conflicted
+}
+```
 
 ---
 
@@ -500,6 +558,46 @@ closed by a `runtime.AddCleanup` finalizer rather than leaking the span.
 
 waffle registers the pool under `config/service/sql`, as `di.Fallback()` — a
 service that needs different options declares its own.
+
+---
+
+## 8. Testing
+
+`gitlab.com/gorib/sql/sqltest` runs a component test over a real Postgres. It
+speaks Postgres only; MySQL and SQLite have no counterpart.
+
+```go
+func setup(ctx context.Context) (*sqltest.Postgres, error) {
+    pg := sqltest.New(
+        sqltest.Env("TEST_DB_DSN"),
+        sqltest.Docker("postgres:17"),
+        sqltest.Database("orders"),
+        sqltest.Migrations(migrate), // func(ctx context.Context, db *sql.DB) error
+    )
+    if err := pg.Provision(ctx); err != nil {
+        return nil, err
+    }
+    return pg, pg.Migrate(ctx)
+}
+```
+
+`pg.Db()` is the `sql.Db` the repositories take. Do not swap it for a stand-in:
+it carries the SQL the repositories build, and a stand-in tests none of it.
+
+- **Address.** The first that resolves: `Dsn`, then the `Env` variables in
+  order, then `Docker` (a loopback-only container that outlives the run; it
+  needs `Database`). There is no default DSN. When nothing resolves `Provision`
+  fails naming the variables to set, and an unreachable database fails it too —
+  nothing is skipped. Errors carry host, port and database, never the DSN.
+- **`Migrate`** runs `Migrations`, then finds the tables unless `Tables` lists
+  them; the bookkeeping tables (`goose_db_version`, `migrations`,
+  `schema_migrations`) are left out.
+- **`Reset`** truncates those tables. It empties; it does not recreate.
+- **`Ephemeral`** puts the process id into the database name so packages run side
+  by side, and `Down` drops it. **`Suffix`** gives a second instance its own
+  database.
+- **`FailWith(err)`** fails every `Db` the resource handed out, with `err` (nil
+  reads as a refused connection), until the next `Reset`.
 
 ---
 
