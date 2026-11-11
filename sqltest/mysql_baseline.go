@@ -141,7 +141,8 @@ func (m *Mysql) increments(ctx context.Context, conn *dbSql.Conn) (map[string]in
 func (m *Mysql) rememberTriggers(ctx context.Context, conn *dbSql.Conn, filled []string) error {
 	rows, err := conn.QueryContext(ctx, `
 		select trigger_name, event_object_table, event_manipulation from information_schema.triggers
-		where trigger_schema = database() and event_manipulation in ('INSERT', 'DELETE')`)
+		where trigger_schema = database() and event_manipulation in ('INSERT', 'DELETE')
+		order by event_object_table, action_order`)
 	if err != nil {
 		return err
 	}
@@ -189,15 +190,23 @@ func (m *Mysql) restore(ctx context.Context) error {
 				changed = append(changed, table)
 			}
 		}
-		var firing []mysqlTrigger
+		present, err := m.presentTriggers(ctx, conn)
+		if err != nil {
+			return err
+		}
+		var firing, recreated []mysqlTrigger
 		for _, trigger := range m.baseline.triggers {
+			switch {
+			case !present[trigger.name]:
+				recreated = append(recreated, trigger)
 			// A delete trigger fires only on rows there are to delete.
-			if slices.Contains(changed, trigger.table) && (trigger.event == "INSERT" || checksums[trigger.table] != 0) {
+			case slices.Contains(changed, trigger.table) && (trigger.event == "INSERT" || checksums[trigger.table] != 0):
 				firing = append(firing, trigger)
+				recreated = append(recreated, trigger)
 			}
 		}
 		for _, trigger := range firing {
-			if _, err = conn.ExecContext(ctx, "drop trigger if exists "+backtick(trigger.name)); err != nil {
+			if _, err = conn.ExecContext(ctx, "drop trigger "+backtick(trigger.name)); err != nil {
 				return err
 			}
 		}
@@ -207,7 +216,7 @@ func (m *Mysql) restore(ctx context.Context) error {
 		if err = m.rewind(ctx, conn); err != nil {
 			return err
 		}
-		for _, trigger := range firing {
+		for _, trigger := range recreated {
 			if _, err = conn.ExecContext(ctx, "set session sql_mode = "+mysqlLiteral(trigger.sqlMode)); err != nil {
 				return err
 			}
@@ -221,12 +230,34 @@ func (m *Mysql) restore(ctx context.Context) error {
 
 // information_schema otherwise answers AUTO_INCREMENT from a day-old cache.
 func (m *Mysql) settle(ctx context.Context, conn *dbSql.Conn) error {
-	for _, setting := range []string{"set session foreign_key_checks = 0", "set session information_schema_stats_expiry = 0"} {
+	for _, setting := range []string{
+		"set session foreign_key_checks = 0",
+		"set session information_schema_stats_expiry = 0",
+		"set session sql_mode = concat_ws(',', nullif(@@session.sql_mode, ''), 'NO_AUTO_VALUE_ON_ZERO')",
+	} {
 		if _, err := conn.ExecContext(ctx, setting); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (m *Mysql) presentTriggers(ctx context.Context, conn *dbSql.Conn) (map[string]bool, error) {
+	rows, err := conn.QueryContext(ctx, "select trigger_name from information_schema.triggers where trigger_schema = database()")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	present := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err = rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		present[name] = true
+	}
+	return present, rows.Err()
 }
 
 func (m *Mysql) refill(ctx context.Context, conn *dbSql.Conn, tables []string) error {

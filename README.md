@@ -671,7 +671,8 @@ five seconds for a lock, as a service's own DSN would set them.
 above. The rows the migrations wrote, and `sqlite_sequence`, are kept in a file
 beside the database that only the resetting connection attaches. SQLite cannot
 switch a trigger off, so `Reset` drops the triggers and creates them again
-inside its transaction.
+inside its transaction. Virtual tables (FTS5, R*Tree) and their shadow tables
+are left out, so the rows a case writes into them are not reset.
 
 There is no `RefuseCommit`: the only thing that fails an SQLite commit on
 demand is a deferred foreign key, which `sql.NewError` reads as `ErrConflict`,

@@ -100,6 +100,43 @@ func TestMysqlResetFiresNoTriggerAndKeepsThem(t *testing.T) {
 	assert.Equal(t, []string{"R2"}, columnMysql(t, m, `select what from audit`))
 }
 
+func TestMysqlATriggerAnEarlierResetLostComesBack(t *testing.T) {
+	m := migratedMysql(t, "lost", seededMysql...)
+	execMysql(t, m, `drop trigger vendors_audited`)
+
+	require.NoError(t, m.Reset(t.Context()))
+
+	execMysql(t, m, `insert into vendors (state_id, name) values (1, 'R2')`)
+	assert.Equal(t, []string{"R2"}, columnMysql(t, m, `select what from audit`))
+}
+
+func TestMysqlTriggersComeBackInTheirOrder(t *testing.T) {
+	m := migratedMysql(t, "order",
+		`create table items (id int auto_increment primary key, name varchar(50) not null)`,
+		`create table log (id int auto_increment primary key, what varchar(50) not null)`,
+		`create trigger b_first after insert on items for each row insert into log (what) values ('first')`,
+		`create trigger a_second after insert on items for each row follows b_first insert into log (what) values ('second')`,
+		`insert into items (name) values ('seeded')`)
+	execMysql(t, m, `insert into items (name) values ('extra')`)
+
+	require.NoError(t, m.Reset(t.Context()))
+
+	execMysql(t, m, `insert into items (name) values ('next')`)
+	assert.Equal(t, []string{"first", "second", "first", "second"}, columnMysql(t, m, `select what from log order by id`))
+}
+
+func TestMysqlARowTheMigrationsMovedToIdZeroKeepsIt(t *testing.T) {
+	m := migratedMysql(t, "zero",
+		`create table states (id int auto_increment primary key, name varchar(50) not null)`,
+		`insert into states (name) values ('none'), ('new')`,
+		`update states set id = 0 where name = 'none'`)
+	execMysql(t, m, `insert into states (name) values ('extra')`)
+
+	require.NoError(t, m.Reset(t.Context()))
+
+	assert.Equal(t, []string{"0 none", "2 new"}, columnMysql(t, m, `select concat(id, ' ', name) from states order by id`))
+}
+
 func TestMysqlForeignKeysAreCheckedAfterAReset(t *testing.T) {
 	m := migratedMysql(t, "keys", seededMysql...)
 
