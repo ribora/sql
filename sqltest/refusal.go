@@ -50,13 +50,13 @@ func (p *Postgres) Refuse(ctx context.Context, table string, refused ...Write) e
 
 func (p *Postgres) RefuseAfter(ctx context.Context, table string, rows int, refused ...Write) error {
 	return p.refuse(ctx, table, rows, refused, "", func(name, events string) string {
-		return "create trigger " + name + " before " + events + " on " + quoteIdent(table) + " for each row"
+		return "create trigger " + name + " before " + events + " on " + quoteRelation(table) + " for each row"
 	})
 }
 
 func (p *Postgres) RefuseCommit(ctx context.Context, table string, refused ...Write) error {
 	return p.refuse(ctx, table, 0, refused, "commit_", func(name, events string) string {
-		return "create constraint trigger " + name + " after " + events + " on " + quoteIdent(table) +
+		return "create constraint trigger " + name + " after " + events + " on " + quoteRelation(table) +
 			" deferrable initially deferred for each row"
 	})
 }
@@ -80,10 +80,10 @@ func (p *Postgres) refuse(ctx context.Context, table string, rows int, refused [
 	if _, err = tx.ExecContext(ctx, `
 		insert into `+refusalSchema+`.quota (relation, name, remaining) values ($1::regclass, $2, $3)
 		on conflict (relation, name) do update set remaining = excluded.remaining`,
-		quoteIdent(table), name, rows); err != nil {
+		quoteRelation(table), name, rows); err != nil {
 		return fmt.Errorf("cannot refuse writes to %s: %w", table, err)
 	}
-	if _, err = tx.ExecContext(ctx, "drop trigger if exists "+name+" on "+quoteIdent(table)); err != nil {
+	if _, err = tx.ExecContext(ctx, "drop trigger if exists "+name+" on "+quoteRelation(table)); err != nil {
 		return fmt.Errorf("cannot refuse writes to %s: %w", table, err)
 	}
 	if _, err = tx.ExecContext(ctx, trigger(name, strings.Join(events, " or "))+
@@ -98,6 +98,13 @@ func (p *Postgres) lift(ctx context.Context) error {
 		return fmt.Errorf("cannot lift the refusals on %s: %w", address(p.dsn), err)
 	}
 	return nil
+}
+
+func quoteRelation(table string) string {
+	if schema, name, qualified := strings.Cut(table, "."); qualified {
+		return quoteIdent(schema) + "." + quoteIdent(name)
+	}
+	return quoteIdent(table)
 }
 
 func triggerEvents(refused []Write) ([]string, error) {

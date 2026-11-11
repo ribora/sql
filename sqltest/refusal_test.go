@@ -48,6 +48,14 @@ func TestARefusalLeavesTheWritesItDoesNotNameAlone(t *testing.T) {
 	assert.ErrorContains(t, attempt(t, p, `delete from vendors`), "refused")
 }
 
+func TestATableIsNamedWithItsSchema(t *testing.T) {
+	p := migrated(t, "qualified", seeded)
+
+	require.NoError(t, p.Refuse(t.Context(), "public.vendors"))
+
+	assert.ErrorContains(t, attempt(t, p, `delete from vendors`), "delete on vendors is refused")
+}
+
 func TestAQuotaLetsThatManyRowsThrough(t *testing.T) {
 	p := migrated(t, "quota", seeded)
 
