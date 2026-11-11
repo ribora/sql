@@ -49,7 +49,7 @@ func TestAddressDropsTheCredentials(t *testing.T) {
 }
 
 func TestUnreachableKeepsTheCredentialsOut(t *testing.T) {
-	err := unreachable("postgres://postgres:fake-pw@127.0.0.1:15432/bastion_test", assert.AnError)
+	err := New().unreachable("postgres://postgres:fake-pw@127.0.0.1:15432/bastion_test", assert.AnError)
 
 	assert.NotContains(t, err.Error(), "fake-pw")
 	assert.Contains(t, err.Error(), "127.0.0.1:15432/bastion_test")
@@ -71,7 +71,7 @@ func TestResetIsANoopUntilTablesAreKnown(t *testing.T) {
 }
 
 func TestDriverIsFixedToPostgres(t *testing.T) {
-	assert.Equal(t, "pgx", New().driver)
+	assert.Equal(t, "pgx", New().host.driver())
 }
 
 func TestNameIsReportedForTheSeam(t *testing.T) {

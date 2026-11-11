@@ -40,10 +40,6 @@ func address(dsn string) string {
 	return fmt.Sprintf("%s:%d/%s", cfg.Host, cfg.Port, cfg.Database)
 }
 
-func unreachable(dsn string, err error) error {
-	return fmt.Errorf("no test database at %s: %w", address(dsn), err)
-}
-
 // Edited in place, not rebuilt from the parsed config: rebuilding drops sslmode,
 // timeouts and search_path.
 func withDatabase(dsn, name string) (string, error) {
@@ -103,6 +99,10 @@ func splitKeywords(dsn string) []string {
 // is folded to lower case and finds nothing.
 func quoteIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+func quoteLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 // libpq quoting: single quotes, backslash-escaped inside.

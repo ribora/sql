@@ -563,8 +563,8 @@ service that needs different options declares its own.
 
 ## 8. Testing
 
-`gitlab.com/gorib/sql/sqltest` runs a component test over a real Postgres. It
-speaks Postgres only; MySQL and SQLite have no counterpart.
+`gitlab.com/gorib/sql/sqltest` runs a component test over a real Postgres,
+[MySQL](#mysql) or [SQLite](#sqlite).
 
 ```go
 func setup(ctx context.Context) (*sqltest.Postgres, error) {
@@ -616,6 +616,66 @@ it carries the SQL the repositories build, and a stand-in tests none of it.
   error, which `sql.NewError` reads as `ErrInternal`.
 - **`Heal(ctx)`** ends `FailWith` and every refusal and leaves the rows as they
   are — for a case where the database comes back.
+
+### MySQL
+
+```go
+db := sqltest.NewMysql(
+    sqltest.Env("TEST_DB_DSN"),
+    sqltest.Docker("mysql:8.4"),
+    sqltest.Database("orders"),
+    sqltest.Migrations(migrate),
+)
+```
+
+The options are the Postgres ones, and the address chain, `Ephemeral`, `Suffix`
+and the sweep work the same way. The DSN is go-sql-driver's
+(`user:pass@tcp(host:port)/db?parseTime=true`); `Docker` starts the image as
+root with no password, and its DSN carries `parseTime=true`, which goose needs.
+MySQL 8.0.19 or later.
+
+- MySQL keeps no comment on a database, so the creation mark is the comment of
+  a `sqltest_mark` table in it. The rows the migrations wrote are kept in
+  `sqltest_kept_N` tables beside the service's; `Migrate` leaves every
+  `sqltest_` table out.
+- **`Reset`** touches only the tables whose `CHECKSUM TABLE` changed: it
+  deletes their rows and puts the kept ones back in one transaction, with
+  foreign key checks off for its own connection. Truncating, a trigger and an
+  `AUTO_INCREMENT` are DDL here, at 7 to 60 ms a statement, so a trigger the
+  rows would fire is dropped and created again only on a table that changed,
+  and a counter is set back only where a scenario moved it. A reset that
+  changes nothing costs about 3 ms.
+- **`Refuse`** and **`RefuseAfter`** work through triggers with `SIGNAL`, which
+  `sql.NewError` reads as `ErrInternal`. A trigger needs the `TRIGGER`
+  privilege, and with binary logging on MySQL may also ask for `SUPER` or
+  `log_bin_trust_function_creators`: the container's root has all of it, a CI
+  user may not.
+- There is no `RefuseCommit`: MySQL has no deferred constraint, so nothing can
+  fail a commit that its statements did not.
+- `Down` kills the connections still on the database before dropping it, since
+  MySQL has no `with (force)`.
+
+### SQLite
+
+```go
+db := sqltest.NewSqlite(migrate) // nil when there are no migrations
+```
+
+There is no address and no container: `Provision` makes a file under the
+system's temporary directory, and `Down` removes it, so packages run side by
+side with nothing to configure. A run killed before `Down` leaves the directory
+to the system's own clean-up. Connections check foreign keys and wait up to
+five seconds for a lock, as a service's own DSN would set them.
+
+`Migrate`, `Reset`, `FailWith`, `Refuse`, `RefuseAfter` and `Heal` behave as
+above. The rows the migrations wrote, and `sqlite_sequence`, are kept in a file
+beside the database that only the resetting connection attaches. SQLite cannot
+switch a trigger off, so `Reset` drops the triggers and creates them again
+inside its transaction.
+
+There is no `RefuseCommit`: the only thing that fails an SQLite commit on
+demand is a deferred foreign key, which `sql.NewError` reads as `ErrConflict`,
+and a case would then test the conflict branch instead of a failed commit.
 
 ---
 

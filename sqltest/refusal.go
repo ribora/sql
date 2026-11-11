@@ -75,7 +75,7 @@ func (p *Postgres) refuse(ctx context.Context, table string, rows int, refused [
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err = tx.ExecContext(ctx, refusalSetup); err != nil {
-		return fmt.Errorf("cannot prepare the refusal on %s: %w", address(p.dsn), err)
+		return fmt.Errorf("cannot prepare the refusal on %s: %w", p.where(), err)
 	}
 	if _, err = tx.ExecContext(ctx, `
 		insert into `+refusalSchema+`.quota (relation, name, remaining) values ($1::regclass, $2, $3)
@@ -95,7 +95,7 @@ func (p *Postgres) refuse(ctx context.Context, table string, rows int, refused [
 
 func (p *Postgres) lift(ctx context.Context) error {
 	if _, err := p.handle.ExecContext(ctx, "drop schema if exists "+refusalSchema+" cascade"); err != nil {
-		return fmt.Errorf("cannot lift the refusals on %s: %w", address(p.dsn), err)
+		return fmt.Errorf("cannot lift the refusals on %s: %w", p.where(), err)
 	}
 	return nil
 }

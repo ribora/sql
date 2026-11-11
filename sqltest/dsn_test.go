@@ -22,7 +22,7 @@ func TestAddressRedactsBothDsnForms(t *testing.T) {
 
 			assert.Equal(t, "127.0.0.1:15432/warehouse_test", reported)
 			assert.NotContains(t, reported, "fake-pw")
-			assert.NotContains(t, unreachable(dsn, assert.AnError).Error(), "fake-pw")
+			assert.NotContains(t, New().unreachable(dsn, assert.AnError).Error(), "fake-pw")
 		})
 	}
 }

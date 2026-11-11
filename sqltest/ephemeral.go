@@ -2,7 +2,6 @@ package sqltest
 
 import (
 	"context"
-	dbSql "database/sql"
 	"fmt"
 	"os"
 	"strconv"
@@ -23,97 +22,71 @@ func personalizedName(base string) string {
 }
 
 // Before personalize, so the suffix is part of the base the sweep matches on.
-func (p *Postgres) separate() error {
-	if p.suffix == "" || p.suffixed {
+func (s *server) separate() error {
+	if s.suffix == "" || s.suffixed {
 		return nil
 	}
-	name, err := p.databaseName()
+	name, err := s.databaseName()
 	if err != nil {
 		return err
 	}
-	dsn, err := withDatabase(p.dsn, name+"_"+p.suffix)
+	dsn, err := s.host.withDatabase(s.dsn, name+"_"+s.suffix)
 	if err != nil {
 		return err
 	}
-	p.dsn, p.suffixed = dsn, true
+	s.dsn, s.suffixed = dsn, true
 	return nil
 }
 
-func (p *Postgres) personalize() error {
-	if !p.ephemeral || p.base != "" {
+func (s *server) personalize() error {
+	if !s.ephemeral || s.base != "" {
 		return nil
 	}
-	base, err := p.databaseName()
+	base, err := s.databaseName()
 	if err != nil {
 		return err
 	}
-	dsn, err := withDatabase(p.dsn, personalizedName(base))
+	dsn, err := s.host.withDatabase(s.dsn, personalizedName(base))
 	if err != nil {
 		return err
 	}
-	p.base, p.dsn = base, dsn
+	s.base, s.dsn = base, dsn
 	return nil
 }
 
-func (p *Postgres) sweep(ctx context.Context) error {
-	if !p.ephemeral {
+func (s *server) sweep(ctx context.Context) error {
+	if !s.ephemeral {
 		return nil
 	}
-	ours, err := p.databaseName()
+	ours, err := s.databaseName()
 	if err != nil {
 		return err
 	}
-	handle, err := p.maintenance()
+	admin, err := s.maintenance()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = handle.Close() }()
+	defer func() { _ = admin.Close() }()
 
-	rows, err := handle.QueryContext(ctx, `
-		select d.datname, coalesce(shobj_description(d.oid, 'pg_database'), '')
-		from pg_database d where d.datistemplate = false`)
+	marks, err := s.host.marks(ctx, admin)
 	if err != nil {
-		return fmt.Errorf("cannot list the databases of %s: %w", address(p.dsn), err)
+		return fmt.Errorf("cannot list the databases of %s: %w", s.where(), err)
 	}
-
-	var stale []string
-	for rows.Next() {
-		var name, comment string
-		if err = rows.Scan(&name, &comment); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		if name == ours || !sweepable(name, p.base) {
+	for name, mark := range marks {
+		if name == ours || !sweepable(name, s.base) {
 			continue
 		}
-		created, ok := createdAt(comment)
+		created, ok := createdAt(mark)
 		if !ok || time.Since(created) < sweepAfter {
 			continue
 		}
-		stale = append(stale, name)
-	}
-	_ = rows.Close()
-	if err = rows.Err(); err != nil {
-		return err
-	}
-
-	for _, name := range stale {
-		if busy, err := connected(ctx, handle, name); err != nil || busy {
+		if busy, err := s.host.connected(ctx, admin, name); err != nil || busy {
 			continue
 		}
 		// Best effort: a concurrent sweep may have taken it already.
-		_, _ = handle.ExecContext(ctx, "drop database if exists "+quoteIdent(name)+" with (force)")
+		_ = s.host.drop(ctx, admin, name)
 	}
 	return nil
-}
-
-func connected(ctx context.Context, handle *dbSql.DB, name string) (bool, error) {
-	var count int
-	row := handle.QueryRowContext(ctx, "select count(*) from pg_stat_activity where datname = $1", name)
-	if err := row.Scan(&count); err != nil {
-		return false, err
-	}
-	return count > 0, nil
 }
 
 // Matched in Go rather than with LIKE: the base contains underscores, which

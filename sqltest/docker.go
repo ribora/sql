@@ -10,25 +10,29 @@ import (
 	"time"
 )
 
-// One container per repository: two services are two databases in it. Shared
-// defaults, so every service lands in the same instance.
-const (
-	defaultContainer = "gorib-harness-pg"
-	defaultPort      = 55432
+const runtimeTimeout = 30 * time.Second
 
-	runtimeTimeout = 30 * time.Second
-)
-
-// Last resort, after Dsn and Env. Trust authentication, so no password exists to
-// keep anywhere; a binary rather than testcontainers, to stay out of go.mod.
+// Last resort, after Dsn and Env. No password exists to keep anywhere; a binary
+// rather than testcontainers, to stay out of go.mod.
 func Docker(image string, opts ...DockerOption) Option {
-	return func(p *Postgres) {
-		c := &container{image: image, name: defaultContainer, port: defaultPort}
+	return func(s *server) {
+		kind := s.host.kind()
+		c := &container{kind: kind, image: image, name: kind.name, port: kind.port}
 		for _, opt := range opts {
 			opt(c)
 		}
-		p.container = c
+		s.container = c
 	}
+}
+
+// One container per repository and dialect: two services are two databases in
+// it. Shared defaults, so every service lands in the same instance.
+type containerKind struct {
+	name       string
+	port       int
+	serverPort int
+	noPassword string
+	dsn        func(port int, database string) string
 }
 
 type DockerOption func(*container)
@@ -47,13 +51,14 @@ func Runtime(binary string) DockerOption {
 }
 
 type container struct {
+	kind    containerKind
 	image   string
 	name    string
 	port    int
 	runtime string
 }
 
-// Does not wait for postgres to accept connections: that is the caller's ping
+// Does not wait for the server to accept connections: that is the caller's ping
 // loop, which has the driver.
 func (c *container) ensure(ctx context.Context) error {
 	binary, err := c.binary()
@@ -76,12 +81,12 @@ func (c *container) ensure(ctx context.Context) error {
 }
 
 func (c *container) start(ctx context.Context, binary string) error {
-	// Loopback only: with trust authentication, publishing on every interface
-	// would be an open postgres on whatever network the laptop is on.
+	// Loopback only: with no password, publishing on every interface would be an
+	// open database on whatever network the laptop is on.
 	out, err := exec.CommandContext(ctx, binary, "run", "-d",
 		"--name", c.name,
-		"-p", "127.0.0.1:"+strconv.Itoa(c.port)+":5432",
-		"-e", "POSTGRES_HOST_AUTH_METHOD=trust",
+		"-p", "127.0.0.1:"+strconv.Itoa(c.port)+":"+strconv.Itoa(c.kind.serverPort),
+		"-e", c.kind.noPassword,
 		c.image,
 	).CombinedOutput()
 	if err != nil {
@@ -114,21 +119,7 @@ func (c *container) binary() (string, error) {
 }
 
 func (c *container) dsn(database string) string {
-	return fmt.Sprintf("postgres://postgres@127.0.0.1:%d/%s?sslmode=disable", c.port, database)
+	return c.kind.dsn(c.port, database)
 }
 
 var errNoDatabase = errors.New("sqltest: sqltest.Docker needs sqltest.Database to name the database")
-
-// `with (force)` — postgres 13 and later: our own pool is not the only possible
-// connection, and a leaked one would otherwise leave the schema behind.
-func (p *Postgres) drop(ctx context.Context, name string) error {
-	handle, err := p.maintenance()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = handle.Close() }()
-	if _, err = handle.ExecContext(ctx, "drop database if exists "+quoteIdent(name)+" with (force)"); err != nil {
-		return fmt.Errorf("cannot drop database %q: %w", name, err)
-	}
-	return nil
-}

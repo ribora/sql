@@ -33,7 +33,7 @@ func TestDockerWithoutADatabaseNameSaysSo(t *testing.T) {
 }
 
 func TestContainerAddressCarriesNoCredential(t *testing.T) {
-	c := &container{port: 55432}
+	c := &container{kind: postgresContainer, port: 55432}
 
 	dsn := c.dsn("bastion_test")
 
@@ -47,8 +47,8 @@ func TestDefaultsAreSharedAcrossServices(t *testing.T) {
 
 	assert.Equal(t, first.container.name, second.container.name)
 	assert.Equal(t, first.container.port, second.container.port)
-	assert.Equal(t, defaultContainer, first.container.name)
-	assert.Equal(t, defaultPort, first.container.port)
+	assert.Equal(t, postgresContainer.name, first.container.name)
+	assert.Equal(t, postgresContainer.port, first.container.port)
 }
 
 func TestContainerOptionsOverrideTheDefaults(t *testing.T) {
