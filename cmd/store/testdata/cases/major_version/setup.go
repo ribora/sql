@@ -1,6 +1,6 @@
 package major_version
 
-import "gitlab.com/gorib/sql/cmd/store/testdata/cases/major_version/payload/v2"
+import "github.com/ribora/sql/cmd/store/testdata/cases/major_version/payload/v2"
 
 // The last element of the path is the version. Reading only that put the import
 // under "v2", nothing under "payload", and the generated file carried an import

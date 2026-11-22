@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"gitlab.com/gorib/criteria"
-	"gitlab.com/gorib/sql/driver"
+	"github.com/ribora/criteria"
+	"github.com/ribora/sql/driver"
 )
 
 var (

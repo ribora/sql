@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"gitlab.com/gorib/sql/op"
+	"github.com/ribora/sql/op"
 )
 
 type Raw string

@@ -1,6 +1,6 @@
 package wrapping_pkg
 
-import "gitlab.com/gorib/sql/cmd/store/testdata/cases/wrapping_pkg/wrapsql"
+import "github.com/ribora/sql/cmd/store/testdata/cases/wrapping_pkg/wrapsql"
 
 type Payload struct {
 	Kind string
@@ -12,7 +12,7 @@ type Doc struct {
 	Meta Payload
 }
 
-// The csv field would reach for gitlab.com/gorib/sql by default, and the wrapped
+// The csv field would reach for github.com/ribora/sql by default, and the wrapped
 // field names another package. One import line has to come out, and it has to be
 // the one the author wrote — two aliases for one name do not build, and the
 // default would be a package this file never mentions. csv is declared after the

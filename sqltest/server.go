@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/gorib/sql"
+	"github.com/ribora/sql"
 )
 
 const startupTimeout = 60 * time.Second

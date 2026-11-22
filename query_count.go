@@ -1,7 +1,7 @@
 package sql
 
 import (
-	"gitlab.com/gorib/criteria"
+	"github.com/ribora/criteria"
 )
 
 type CountQuery interface {

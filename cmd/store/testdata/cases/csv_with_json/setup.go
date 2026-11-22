@@ -1,6 +1,6 @@
 package csv_with_json
 
-import "gitlab.com/gorib/sql"
+import "github.com/ribora/sql"
 
 type Payload struct {
 	Kind string

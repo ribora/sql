@@ -4,7 +4,7 @@
 package model_pkg
 
 import (
-	model "gitlab.com/gorib/sql/cmd/store/testdata/cases/model_pkg/model"
+	model "github.com/ribora/sql/cmd/store/testdata/cases/model_pkg/model"
 )
 
 var StoredOrderMappings = map[string]string{

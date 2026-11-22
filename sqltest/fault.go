@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gitlab.com/gorib/sql"
+	"github.com/ribora/sql"
 )
 
 // What a server that went away looks like from the client.

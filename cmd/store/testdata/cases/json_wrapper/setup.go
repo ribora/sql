@@ -1,6 +1,6 @@
 package json_wrapper
 
-import "gitlab.com/gorib/sql"
+import "github.com/ribora/sql"
 
 type Payload struct {
 	Kind string

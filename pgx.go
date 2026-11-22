@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"gitlab.com/gorib/sql/driver"
+	"github.com/ribora/sql/driver"
 )
 
 func newPgx(dsn string) closableDb {

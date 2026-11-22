@@ -14,7 +14,7 @@ const (
 	// A hash, so the alias cannot collide with anything the author imported.
 	sqlWrapper = "c87d7b66130cd9245a1d3f5dde49683a"
 	// A csv field needs it even when the source file imports no sql package.
-	defaultSqlImport = `"gitlab.com/gorib/sql"`
+	defaultSqlImport = `"github.com/ribora/sql"`
 )
 
 type Lexem struct {

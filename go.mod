@@ -1,4 +1,4 @@
-module gitlab.com/gorib/sql
+module github.com/ribora/sql
 
 go 1.27.0
 
@@ -8,9 +8,9 @@ require (
 	github.com/iancoleman/strcase v0.3.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jmoiron/sqlx v1.4.0
+	github.com/ribora/criteria v1.2.0
+	github.com/ribora/hilton v1.3.0
 	github.com/stretchr/testify v1.12.1
-	gitlab.com/gorib/criteria v1.1.1
-	gitlab.com/gorib/hilton v1.2.5
 	golang.org/x/tools v0.49.0
 	modernc.org/sqlite v1.57.0
 )

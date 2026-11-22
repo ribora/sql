@@ -9,7 +9,7 @@ import (
 	"io"
 	"slices"
 
-	"gitlab.com/gorib/sql"
+	"github.com/ribora/sql"
 )
 
 type engine struct {

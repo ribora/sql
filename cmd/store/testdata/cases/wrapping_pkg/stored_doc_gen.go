@@ -4,7 +4,7 @@
 package wrapping_pkg
 
 import (
-	c87d7b66130cd9245a1d3f5dde49683a "gitlab.com/gorib/sql/cmd/store/testdata/cases/wrapping_pkg/wrapsql"
+	c87d7b66130cd9245a1d3f5dde49683a "github.com/ribora/sql/cmd/store/testdata/cases/wrapping_pkg/wrapsql"
 )
 
 var StoredDocMappings = map[string]string{

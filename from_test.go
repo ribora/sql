@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gitlab.com/gorib/criteria"
-	"gitlab.com/gorib/sql/driver"
+	"github.com/ribora/criteria"
+	"github.com/ribora/sql/driver"
 )
 
 func TestFrom_JoinLeavesTheTableAlone(t *testing.T) {

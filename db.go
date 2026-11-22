@@ -13,10 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/gorib/hilton"
+	"github.com/ribora/hilton"
 )
 
-const instrumentationName = "gitlab.com/gorib/sql"
+const instrumentationName = "github.com/ribora/sql"
 
 func NewDb(driver, dsn string) (Db, error) {
 	var inner closableDb

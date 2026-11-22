@@ -4,7 +4,7 @@
 package renamed_pkg
 
 import (
-	payload "gitlab.com/gorib/sql/cmd/store/testdata/cases/renamed_pkg/pkgdir"
+	payload "github.com/ribora/sql/cmd/store/testdata/cases/renamed_pkg/pkgdir"
 )
 
 var StoredDocMappings = map[string]string{

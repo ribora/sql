@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gitlab.com/gorib/sql/op"
+	"github.com/ribora/sql/op"
 )
 
 func NewPostgres() *pgxDriver {

@@ -3,7 +3,7 @@ package driver
 import (
 	"strings"
 
-	"gitlab.com/gorib/sql/op"
+	"github.com/ribora/sql/op"
 )
 
 func NewSqlite() *sqliteDriver {

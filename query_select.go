@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gitlab.com/gorib/criteria"
+	"github.com/ribora/criteria"
 )
 
 type SelectQuery interface {

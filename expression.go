@@ -1,9 +1,9 @@
 package sql
 
 import (
-	"gitlab.com/gorib/criteria"
+	"github.com/ribora/criteria"
 
-	"gitlab.com/gorib/sql/op"
+	"github.com/ribora/sql/op"
 )
 
 func Eq(field string, value any) criteria.Condition {

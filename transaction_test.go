@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"gitlab.com/gorib/sql/driver"
+	"github.com/ribora/sql/driver"
 )
 
 var errDo = errors.New("do")

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"gitlab.com/gorib/sql"
+	"github.com/ribora/sql"
 )
 
 func TestJoinCsv(t *testing.T) {

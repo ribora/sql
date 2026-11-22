@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"gitlab.com/gorib/sql/driver"
+	"github.com/ribora/sql/driver"
 )
 
 func newSql(driverName, dsn string) (closableDb, error) {

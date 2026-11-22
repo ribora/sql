@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"gitlab.com/gorib/criteria"
-	"gitlab.com/gorib/sql/driver"
+	"github.com/ribora/criteria"
+	"github.com/ribora/sql/driver"
 )
 
 // Postgres' Build with a query just for testing the WHERE clause shape.

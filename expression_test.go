@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gitlab.com/gorib/criteria"
+	"github.com/ribora/criteria"
 
-	"gitlab.com/gorib/sql/driver"
+	"github.com/ribora/sql/driver"
 )
 
 // A tree built with these constructors is marshalled and sent to another

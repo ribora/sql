@@ -1,6 +1,6 @@
 package model_pkg
 
-import "gitlab.com/gorib/sql/cmd/store/testdata/cases/model_pkg/model"
+import "github.com/ribora/sql/cmd/store/testdata/cases/model_pkg/model"
 
 // The model lives elsewhere, so the generated file has to carry an import line
 // for it — built from the qualifier the field is written with.

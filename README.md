@@ -1,6 +1,6 @@
 # gorib/sql
 
-`gitlab.com/gorib/sql` is a high-performance SQL toolkit for Go built on zero-runtime-reflection and clean domain model principles.
+`github.com/ribora/sql` is a high-performance SQL toolkit for Go built on zero-runtime-reflection and clean domain model principles.
 
 ## 1. Architecture and Drivers
 
@@ -30,7 +30,7 @@ The builder constructs SQL queries programmatically, providing injection safety 
 `Build()` accepts a driver instance and returns the final query string with placeholders.
 
 ```go
-import "gitlab.com/gorib/sql/driver"
+import "github.com/ribora/sql/driver"
 
 q := sql.Select().From(sql.Table("users")).Where(criteria.And().Add("id", "eq", 10))
 
@@ -48,7 +48,7 @@ the vocabulary. The `op` package names it, so a condition can be written
 without a literal:
 
 ```go
-import "gitlab.com/gorib/sql/op"
+import "github.com/ribora/sql/op"
 
 criteria.And("id", string(op.Eq), 10)
 sql.Eq("id", 10) // the same condition
@@ -563,7 +563,7 @@ service that needs different options declares its own.
 
 ## 8. Testing
 
-`gitlab.com/gorib/sql/sqltest` runs a component test over a real Postgres,
+`github.com/ribora/sql/sqltest` runs a component test over a real Postgres,
 [MySQL](#mysql) or [SQLite](#sqlite).
 
 ```go
@@ -685,7 +685,7 @@ and a case would then test the conflict branch instead of a failed commit.
 Register it as a module tool, so the version is pinned in `go.mod` alongside the other generators:
 
 ```sh
-go get -tool gitlab.com/gorib/sql/cmd/store
+go get -tool github.com/ribora/sql/cmd/store
 ```
 
 It is then invoked as `go tool store` — which is what the `//go:generate` line in a stored struct file expects:

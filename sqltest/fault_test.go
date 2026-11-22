@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/gorib/sql"
+	"github.com/ribora/sql"
 )
 
 type stubDb struct{ tx *stubTx }

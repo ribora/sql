@@ -131,7 +131,7 @@ func TestGoldensCompile(t *testing.T) {
 	}
 	args := []string{"build"}
 	for _, name := range successCases {
-		args = append(args, "gitlab.com/gorib/sql/cmd/store/testdata/cases/"+name)
+		args = append(args, "github.com/ribora/sql/cmd/store/testdata/cases/"+name)
 	}
 	cmd := exec.Command("go", args...)
 	cmd.Dir = root

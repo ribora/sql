@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/gorib/sql/op"
+	"github.com/ribora/sql/op"
 )
 
 // The sql constructors emit these; a driver that does not know one fails only

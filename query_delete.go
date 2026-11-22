@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gitlab.com/gorib/criteria"
+	"github.com/ribora/criteria"
 )
 
 type DeleteQuery interface {

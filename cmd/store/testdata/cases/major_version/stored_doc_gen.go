@@ -4,7 +4,7 @@
 package major_version
 
 import (
-	payload "gitlab.com/gorib/sql/cmd/store/testdata/cases/major_version/payload/v2"
+	payload "github.com/ribora/sql/cmd/store/testdata/cases/major_version/payload/v2"
 )
 
 var StoredDocMappings = map[string]string{

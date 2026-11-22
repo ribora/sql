@@ -4,7 +4,7 @@
 package csv_with_json
 
 import (
-	c87d7b66130cd9245a1d3f5dde49683a "gitlab.com/gorib/sql"
+	c87d7b66130cd9245a1d3f5dde49683a "github.com/ribora/sql"
 )
 
 var StoredDocMappings = map[string]string{
