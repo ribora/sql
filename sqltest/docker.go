@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -77,7 +78,24 @@ func (c *container) ensure(ctx context.Context) error {
 			return fmt.Errorf("cannot start the container %q: %w: %s", c.name, err, strings.TrimSpace(string(out)))
 		}
 	}
-	return nil
+	return c.published(ctx, binary)
+}
+
+// The name alone does not say the container is reachable: one left behind by a run
+// that lost the port race is up with no binding at all, and without this the suite
+// waits out its whole ping timeout before saying anything.
+func (c *container) published(ctx context.Context, binary string) error {
+	const format = `{{range $port, $bindings := .NetworkSettings.Ports}}{{range $bindings}}{{$port}}={{.HostPort}} {{end}}{{end}}`
+	out, err := exec.CommandContext(ctx, binary, "inspect", "-f", format, c.name).Output()
+	if err != nil {
+		return fmt.Errorf("cannot inspect the container %q: %w", c.name, err)
+	}
+	want := fmt.Sprintf("%d/tcp=%d", c.kind.serverPort, c.port)
+	if slices.Contains(strings.Fields(string(out)), want) {
+		return nil
+	}
+	return fmt.Errorf("the container %q publishes %q, not %s: remove it with `%s rm -f %s` and run again",
+		c.name, strings.TrimSpace(string(out)), want, binary, c.name)
 }
 
 func (c *container) start(ctx context.Context, binary string) error {
