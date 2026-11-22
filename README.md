@@ -1,4 +1,4 @@
-# gorib/sql
+# ribora/sql
 
 `github.com/ribora/sql` is a high-performance SQL toolkit for Go built on zero-runtime-reflection and clean domain model principles.
 
@@ -541,7 +541,7 @@ rather than a Go type, which would say nothing and change with the wrapping.
 
 A lookup that matched nothing is counted but not failed: `ErrNoRows` reports
 `error.type=no_rows` on the histogram, while the span is left unmarked, because
-"the row is not there" is usually the question being asked. `gorib/redis`
+"the row is not there" is usually the question being asked. `ribora/redis`
 treats a cache miss the same way and reports the same value.
 
 Durations are in seconds with explicit second-scale buckets — the SDK default is

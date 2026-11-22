@@ -52,7 +52,7 @@ type mysqlHost struct{}
 
 // parseTime: goose reads its bookkeeping into time.Time.
 var mysqlContainer = containerKind{
-	name:       "gorib-harness-mysql",
+	name:       "ribora-harness-mysql",
 	port:       53306,
 	serverPort: 3306,
 	noPassword: "MYSQL_ALLOW_EMPTY_PASSWORD=yes",

@@ -46,7 +46,7 @@ func (p *Postgres) discover(ctx context.Context) ([]string, error) {
 type postgresHost struct{}
 
 var postgresContainer = containerKind{
-	name:       "gorib-harness-pg",
+	name:       "ribora-harness-pg",
 	port:       55432,
 	serverPort: 5432,
 	noPassword: "POSTGRES_HOST_AUTH_METHOD=trust",
